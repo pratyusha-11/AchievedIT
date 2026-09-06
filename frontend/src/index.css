@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* AchievedIT — light mode: warm paper base, vibrant violet accent */
+  --c-ink: 30 27 46;           /* #1E1B2E primary text */
+  --c-ink-900: 23 20 40;       /* #171428 headings */
+  --c-ink-700: 58 52 84;       /* #3A3454 secondary emphasis */
+  --c-ink-500: 111 103 133;    /* #6F6785 muted text */
+
+  --c-bg: 250 248 244;         /* #FAF8F4 page background */
+  --c-surface: 255 255 255;    /* #FFFFFF cards */
+  --c-surface-2: 241 236 251;  /* #F1ECFB hover / alt surface */
+
+  --c-primary: 109 93 252;     /* #6D5DFC violet accent */
+  --c-primary-light: 155 143 255;
+  --c-primary-dark: 83 68 224;
+
+  --c-coral: 255 138 91;       /* #FF8A5B playful secondary accent */
+
+  --c-winner: 232 163 61;      /* gold */
+  --c-finalist: 109 93 252;    /* violet */
+  --c-participant: 111 103 133;/* muted */
+  --c-completion: 34 181 115;  /* green */
+
+  --c-border: 231 225 243;     /* #E7E1F3 */
+
+  color-scheme: light;
+}
+
+.dark {
+  --c-ink: 242 238 251;        /* #F2EEFB primary text */
+  --c-ink-900: 255 255 255;
+  --c-ink-700: 216 210 237;
+  --c-ink-500: 154 147 181;
+
+  --c-bg: 21 18 31;            /* #15121F page background */
+  --c-surface: 31 27 46;       /* #1F1B2E cards */
+  --c-surface-2: 42 36 64;     /* #2A2440 hover / alt surface */
+
+  --c-primary: 140 123 255;    /* #8C7BFF lighter violet for dark contrast */
+  --c-primary-light: 176 164 255;
+  --c-primary-dark: 109 93 252;
+
+  --c-coral: 255 155 114;
+
+  --c-winner: 240 184 77;
+  --c-finalist: 140 123 255;
+  --c-participant: 154 147 181;
+  --c-completion: 61 214 140;
+
+  --c-border: 46 40 70;        /* #2E2846 */
+
+  color-scheme: dark;
+}
+
+html {
+  background: rgb(var(--c-bg));
+}
+
+body {
+  @apply font-body text-ink antialiased transition-colors duration-200;
+  background: rgb(var(--c-bg));
+}
+
+::selection {
+  background: rgb(var(--c-primary-light));
+  color: rgb(var(--c-ink-900));
+}
+
+/* perforated stub edge for certificate cards, follows surface color */
+.stub-edge {
+  background-image: radial-gradient(circle, rgb(var(--c-bg)) 3.5px, transparent 3.6px);
+  background-size: 14px 14px;
+  background-position: -7px center;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid rgb(var(--c-primary));
+  outline-offset: 2px;
+}
+
+/* shimmering placeholder used while certificates are loading */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--c-surface-2)) 25%,
+    rgb(var(--c-border)) 50%,
+    rgb(var(--c-surface-2)) 75%
+  );
+  background-size: 800px 100%;
+}
+
+/* subtle lift on hover for interactive cards */
+.card-hover {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgb(var(--c-ink) / 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
