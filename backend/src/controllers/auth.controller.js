@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const userModel = require('../models/user.model');
+const pendingRegistrationModel = require('../models/pendingRegistration.model');
 const asyncHandler = require('../utils/asyncHandler');
 const { sendVerificationOtpEmail, sendPasswordResetOtpEmail } = require('../services/email.service');
 
@@ -96,15 +97,15 @@ const registerUser = asyncHandler(async (req, res) => {
     });
   }
 
-  // Check if username is already taken
+  // Check if username is already taken by an active user
   const existingUsernameUser = await userModel.findOne({ username });
-  if (existingUsernameUser && existingUsernameUser.email !== email) {
+  if (existingUsernameUser) {
     return res.status(409).json({ message: 'This username is already taken. Please choose another.' });
   }
 
-  // Check if email already exists
+  // Check if email is already registered by an active user
   const existingEmailUser = await userModel.findOne({ email });
-  if (existingEmailUser && existingEmailUser.isEmailVerified) {
+  if (existingEmailUser) {
     return res.status(409).json({ message: 'An account with this email already exists. Try logging in instead.' });
   }
 
@@ -113,43 +114,26 @@ const registerUser = asyncHandler(async (req, res) => {
   const codeHash = hashOtp(otp);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  let user;
-  if (existingEmailUser && !existingEmailUser.isEmailVerified) {
-    // Update existing unverified user with new credentials
-    existingEmailUser.fullName = fullName;
-    existingEmailUser.username = username;
-    existingEmailUser.passwordHash = passwordHash;
-    existingEmailUser.emailVerificationOtp = {
-      codeHash,
-      expiresAt,
-      attempts: 0,
-      lastSentAt: new Date()
-    };
-    await existingEmailUser.save();
-    user = existingEmailUser;
-  } else {
-    // Create new user
-    user = await userModel.create({
-      fullName,
-      username,
-      email,
-      passwordHash,
-      isEmailVerified: false,
-      emailVerificationOtp: {
-        codeHash,
-        expiresAt,
-        attempts: 0,
-        lastSentAt: new Date()
-      }
-    });
-  }
+  // Upsert pending registration (clears any previous unverified attempt for this email/username)
+  await pendingRegistrationModel.deleteMany({ $or: [{ email }, { username }] });
 
-  // Send verification email via Resend
+  await pendingRegistrationModel.create({
+    fullName,
+    username,
+    email,
+    passwordHash,
+    codeHash,
+    expiresAt,
+    attempts: 0,
+    lastSentAt: new Date()
+  });
+
+  // Send verification email (via Gmail SMTP or Resend)
   await sendVerificationOtpEmail({ email, fullName, otp });
 
   res.status(201).json({
     message: 'Verification code sent to your email. Please verify to activate your account.',
-    email: user.email,
+    email,
     requireVerification: true
   });
 });
@@ -165,9 +149,55 @@ const verifyEmailOtp = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Email and verification code are required.' });
   }
 
+  // 1. Check pending registration first
+  const pending = await pendingRegistrationModel.findOne({ email });
+  if (pending) {
+    if (pending.attempts >= 5) {
+      return res.status(429).json({
+        message: 'Too many incorrect attempts. Please request a new verification code.'
+      });
+    }
+
+    if (new Date() > new Date(pending.expiresAt)) {
+      return res.status(400).json({
+        message: 'Verification code has expired. Please request a new code.'
+      });
+    }
+
+    const inputHash = hashOtp(otp);
+    if (inputHash !== pending.codeHash) {
+      pending.attempts = (pending.attempts || 0) + 1;
+      await pending.save();
+      const remaining = 5 - pending.attempts;
+      return res.status(400).json({
+        message: `Invalid verification code. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : 'Please request a new code.'}`
+      });
+    }
+
+    // OTP Verified! NOW create the official user in database
+    const user = await userModel.create({
+      fullName: pending.fullName,
+      username: pending.username,
+      email: pending.email,
+      passwordHash: pending.passwordHash,
+      isEmailVerified: true
+    });
+
+    // Clean up pending registration
+    await pendingRegistrationModel.deleteOne({ _id: pending._id });
+
+    const token = issueSession(res, user);
+    return res.status(200).json({
+      message: 'Email verified successfully! Welcome to AchievedIT.',
+      user: toPublicUser(user),
+      token
+    });
+  }
+
+  // 2. Fallback check for already registered users
   const user = await userModel.findOne({ email });
   if (!user) {
-    return res.status(404).json({ message: 'User not found.' });
+    return res.status(404).json({ message: 'No registration request found for this email. Please sign up first.' });
   }
 
   if (user.isEmailVerified) {
@@ -206,7 +236,7 @@ const verifyEmailOtp = asyncHandler(async (req, res) => {
     });
   }
 
-  // Verification successful
+  // Legacy user verification successful
   user.isEmailVerified = true;
   user.emailVerificationOtp = { codeHash: null, expiresAt: null, attempts: 0, lastSentAt: null };
   await user.save();
@@ -228,9 +258,30 @@ const resendVerificationOtp = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Email is required.' });
   }
 
+  // 1. Check pending registration
+  const pending = await pendingRegistrationModel.findOne({ email });
+  if (pending) {
+    const lastSent = pending.lastSentAt;
+    if (lastSent && Date.now() - new Date(lastSent).getTime() < 60000) {
+      const secondsLeft = Math.ceil((60000 - (Date.now() - new Date(lastSent).getTime())) / 1000);
+      return res.status(429).json({ message: `Please wait ${secondsLeft}s before requesting a new code.` });
+    }
+
+    const otp = generateOtp();
+    pending.codeHash = hashOtp(otp);
+    pending.expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    pending.attempts = 0;
+    pending.lastSentAt = new Date();
+    await pending.save();
+
+    await sendVerificationOtpEmail({ email: pending.email, fullName: pending.fullName, otp });
+    return res.status(200).json({ message: 'A new verification code has been sent to your email.' });
+  }
+
+  // 2. Fallback check for userModel
   const user = await userModel.findOne({ email });
   if (!user) {
-    return res.status(404).json({ message: 'No account found with this email.' });
+    return res.status(404).json({ message: 'No registration found with this email. Please sign up.' });
   }
 
   if (user.isEmailVerified) {
@@ -275,6 +326,19 @@ const loginUser = asyncHandler(async (req, res) => {
   });
 
   if (!user) {
+    const pending = await pendingRegistrationModel.findOne({
+      $or: [{ email: identifier }, { username: identifier }]
+    });
+    if (pending) {
+      const isPasswordValid = await bcrypt.compare(password, pending.passwordHash);
+      if (isPasswordValid) {
+        return res.status(403).json({
+          message: 'Your registration is not verified yet. Please enter the verification code sent to your email.',
+          requireVerification: true,
+          email: pending.email
+        });
+      }
+    }
     return res.status(401).json({ message: 'Invalid credentials.' });
   }
 
