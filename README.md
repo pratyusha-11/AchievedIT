@@ -195,7 +195,5 @@ codebase needs to know.
 ## Feature roadmap (not built yet)
 
 - Bulk upload with a review queue
-- Shareable public portfolio page
-- Resume-bullet generator from stored certificates
 - College-form export (CSV/DOCX) for a selected set of certificates
 - Duplicate detection on upload
