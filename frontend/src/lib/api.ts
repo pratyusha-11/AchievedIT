@@ -5,8 +5,14 @@ const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 // withCredentials lets the browser send/receive cookies
 export const api = axios.create({ baseURL, withCredentials: true });
 
-// Attach Authorization header: Clerk session token (async) or localStorage fallback
+// Attach Authorization header: achievedit_token first, then Clerk session token
 api.interceptors.request.use(async (config) => {
+  const token = localStorage.getItem('achievedit_token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  }
+
   try {
     // Check if Clerk is loaded and active
     // @ts-ignore
@@ -19,13 +25,9 @@ api.interceptors.request.use(async (config) => {
       }
     }
   } catch {
-    // Ignore and fall back to localStorage
+    // Ignore and proceed
   }
 
-  const token = localStorage.getItem('achievedit_token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
   return config;
 });
 

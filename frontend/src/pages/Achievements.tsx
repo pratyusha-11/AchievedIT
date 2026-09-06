@@ -15,7 +15,7 @@ import Footer from '../components/Footer';
 import { getErrorMessage } from '../lib/errorMessage';
 
 export default function Achievements() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { success: showToastSuccess, error: showToastError } = useToast();
 
   const [certs, setCerts] = useState<Certificate[]>([]);
@@ -36,7 +36,7 @@ export default function Achievements() {
     setLoading(true);
     try {
       const { data } = await api.get('/certificates');
-      setCerts(data.certificates);
+      setCerts(data.certificates || []);
     } catch (err) {
       showToastError(getErrorMessage(err, 'Could not load achievements.'));
     } finally {
@@ -45,8 +45,10 @@ export default function Achievements() {
   };
 
   useEffect(() => {
-    loadCerts();
-  }, []);
+    if (!authLoading && user) {
+      loadCerts();
+    }
+  }, [authLoading, user?.id]);
 
   const handleConfirmDelete = async () => {
     if (!deletingCert) return;
