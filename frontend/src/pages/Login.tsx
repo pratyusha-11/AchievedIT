@@ -64,12 +64,15 @@ export default function Login() {
       <div className="w-full max-w-md animate-fade-in">
         {/* Brand Header */}
         <div className="mb-8 text-center">
-          <Link to="/" className="inline-block transition-transform hover:scale-105 mb-3">
+          <Link to="/" className="inline-flex items-center justify-center gap-2.5 transition-transform hover:scale-105 mb-3 group">
             <img
               src={logo}
               alt="AchievedIT"
-              className="h-12 w-auto max-w-[200px] mx-auto object-contain drop-shadow-sm"
+              className="h-10 w-10 object-contain drop-shadow-sm"
             />
+            <span className="font-display text-2xl font-bold tracking-tight text-ink-900 group-hover:text-brass transition-colors">
+              AchievedIT
+            </span>
           </Link>
           <h1 className="font-display text-2xl font-bold text-ink-900">Welcome Back</h1>
           <p className="mt-1 font-mono text-xs uppercase tracking-wider text-ink-500">
