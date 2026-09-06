@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import ThemeToggle from '../components/ThemeToggle';
 import Alert from '../components/Alert';
 import Spinner from '../components/Spinner';
+import logo from '../assets/AchievedIT_logo.png';
 
 export default function Login() {
   const { signIn, sessionExpiredNotice, clearSessionExpiredNotice } = useAuth();
@@ -63,9 +64,13 @@ export default function Login() {
       <div className="w-full max-w-md animate-fade-in">
         {/* Brand Header */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-brass-dark via-brass to-brass-light text-white shadow-md shadow-brass/20">
-            <span className="font-display text-lg font-bold">A</span>
-          </div>
+          <Link to="/" className="inline-block transition-transform hover:scale-105 mb-3">
+            <img
+              src={logo}
+              alt="AchievedIT"
+              className="h-12 w-auto max-w-[200px] mx-auto object-contain drop-shadow-sm"
+            />
+          </Link>
           <h1 className="font-display text-2xl font-bold text-ink-900">Welcome Back</h1>
           <p className="mt-1 font-mono text-xs uppercase tracking-wider text-ink-500">
             Sign in to your AchievedIT registry
