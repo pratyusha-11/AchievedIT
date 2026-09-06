@@ -12,11 +12,12 @@ const otpSchema = new mongoose.Schema(
 
 const userSchema = new mongoose.Schema(
   {
-    fullName: { type: String, required: true, trim: true },
-    username: { type: String, required: true, unique: true, trim: true, lowercase: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
-    isEmailVerified: { type: Boolean, default: false },
+    clerkId: { type: String, unique: true, sparse: true, index: true },
+    fullName: { type: String, required: true, trim: true, default: 'User' },
+    username: { type: String, sparse: true, trim: true, lowercase: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
+    passwordHash: { type: String, required: false },
+    isEmailVerified: { type: Boolean, default: true },
     emailVerificationOtp: { type: otpSchema, default: () => ({}) },
     passwordResetOtp: { type: otpSchema, default: () => ({}) }
   },

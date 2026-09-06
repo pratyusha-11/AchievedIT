@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const { clerkMiddleware } = require('@clerk/express');
 
 const authRoutes = require('./routes/auth.routes');
 const certificateRoutes = require('./routes/certificate.routes');
@@ -35,6 +36,7 @@ app.use(
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+app.use(clerkMiddleware());
 
 // A gentle, app-wide ceiling on top of the tighter per-route limiters below.
 app.use(

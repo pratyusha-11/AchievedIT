@@ -2,13 +2,26 @@ import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// withCredentials lets the browser send/receive the httpOnly auth cookie set
-// by the backend — this is what keeps the session working across the
-// Vercel <-> Render cross-site boundary.
+// withCredentials lets the browser send/receive cookies
 export const api = axios.create({ baseURL, withCredentials: true });
 
-// Attach Authorization header if a token exists in localStorage (dual support: cookie + header)
-api.interceptors.request.use((config) => {
+// Attach Authorization header: Clerk session token (async) or localStorage fallback
+api.interceptors.request.use(async (config) => {
+  try {
+    // Check if Clerk is loaded and active
+    // @ts-ignore
+    if (typeof window !== 'undefined' && window.Clerk?.session) {
+      // @ts-ignore
+      const clerkToken = await window.Clerk.session.getToken();
+      if (clerkToken && config.headers) {
+        config.headers.Authorization = `Bearer ${clerkToken}`;
+        return config;
+      }
+    }
+  } catch {
+    // Ignore and fall back to localStorage
+  }
+
   const token = localStorage.getItem('achievedit_token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -16,10 +29,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// If a session expires (or the cookie is otherwise invalid) mid-use, the
-// backend tells us via a 401 + code. Broadcast that as a DOM event so
-// AuthContext can clear state and the UI can redirect to /login on its own,
-// instead of the request just silently failing.
+// Broadcast 401 session-expired event
 api.interceptors.response.use(
   (res) => res,
   (err) => {

@@ -13,8 +13,8 @@ function validateEnv() {
   if (!process.env.GROQ_API_KEY) {
     console.warn('GROQ_API_KEY not set — "Extract with AI" will be disabled, manual entry still works.');
   }
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY not set — verification & reset emails will be logged to console (mock mode).');
+  if (!process.env.EMAIL_USER) {
+    console.warn('EMAIL_USER not set — verification & reset codes will be logged to server console.');
   }
 }
 

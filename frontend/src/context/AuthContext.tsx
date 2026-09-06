@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useUser, useClerk } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import { getErrorMessage } from '../lib/errorMessage';
 import { User } from '../types';
@@ -44,6 +45,171 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const isClerkConfigured = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+  if (isClerkConfigured) {
+    return <ClerkAuthProvider>{children}</ClerkAuthProvider>;
+  }
+
+  return <FallbackAuthProvider>{children}</FallbackAuthProvider>;
+}
+
+function ClerkAuthProvider({ children }: { children: ReactNode }) {
+  const { user: clerkUser, isLoaded, isSignedIn } = useUser();
+  const { signOut: clerkSignOut } = useClerk();
+  const [mongoUser, setMongoUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+
+  const fetchMongoUser = async () => {
+    if (!isSignedIn) {
+      setMongoUser(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await api.get('/auth/me');
+      setMongoUser(res.data.user);
+    } catch {
+      // Fallback to Clerk profile directly
+      if (clerkUser) {
+        setMongoUser({
+          id: clerkUser.id,
+          fullName: clerkUser.fullName || clerkUser.firstName || 'User',
+          username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress.split('@')[0] || 'user',
+          email: clerkUser.primaryEmailAddress?.emailAddress || '',
+          isEmailVerified: true,
+          createdAt: clerkUser.createdAt ? new Date(clerkUser.createdAt).toISOString() : new Date().toISOString()
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isLoaded) {
+      fetchMongoUser();
+    }
+  }, [isLoaded, isSignedIn, clerkUser]);
+
+  const signOut = async () => {
+    try {
+      await clerkSignOut();
+    } catch {
+      // ignore
+    } finally {
+      setMongoUser(null);
+      localStorage.removeItem('achievedit_token');
+    }
+  };
+
+  const changePassword = async (data: ChangePasswordData) => {
+    try {
+      const res = await api.post('/auth/change-password', data);
+      return { error: null, message: res.data.message };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to change password.') };
+    }
+  };
+
+  const signUp = async (data: SignUpData) => {
+    try {
+      const res = await api.post('/auth/register', data);
+      return { error: null, requireVerification: res.data.requireVerification, email: res.data.email };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Signup failed. Please use Clerk signup.') };
+    }
+  };
+
+  const verifyEmailOtp = async (email: string, otp: string) => {
+    try {
+      const res = await api.post('/auth/verify-otp', { email, otp });
+      return { error: null, user: res.data.user };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Verification failed.') };
+    }
+  };
+
+  const resendVerificationOtp = async (email: string) => {
+    try {
+      const res = await api.post('/auth/resend-otp', { email });
+      return { error: null, message: res.data.message };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to resend code.') };
+    }
+  };
+
+  const signIn = async (identifier: string, password: string) => {
+    try {
+      const res = await api.post('/auth/login', { email: identifier, password });
+      return { error: null };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Login failed.') };
+    }
+  };
+
+  const forgotPassword = async (email: string) => {
+    try {
+      const res = await api.post('/auth/forgot-password', { email });
+      return { error: null, message: res.data.message, email: res.data.email };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to request password reset.') };
+    }
+  };
+
+  const verifyResetOtp = async (email: string, otp: string) => {
+    try {
+      const res = await api.post('/auth/verify-reset-otp', { email, otp });
+      return { error: null, message: res.data.message };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Invalid code.') };
+    }
+  };
+
+  const resetPassword = async (data: ResetPasswordData) => {
+    try {
+      const res = await api.post('/auth/reset-password', data);
+      return { error: null, message: res.data.message };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to reset password.') };
+    }
+  };
+
+  const user: User | null = mongoUser || (clerkUser ? {
+    id: clerkUser.id,
+    fullName: clerkUser.fullName || clerkUser.firstName || 'User',
+    username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress.split('@')[0] || 'user',
+    email: clerkUser.primaryEmailAddress?.emailAddress || '',
+    isEmailVerified: true,
+    createdAt: clerkUser.createdAt ? new Date(clerkUser.createdAt).toISOString() : new Date().toISOString()
+  } : null);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading: !isLoaded || loading,
+        sessionExpiredNotice,
+        clearSessionExpiredNotice: () => setSessionExpiredNotice(false),
+        signUp,
+        verifyEmailOtp,
+        resendVerificationOtp,
+        signIn,
+        forgotPassword,
+        verifyResetOtp,
+        resetPassword,
+        changePassword,
+        signOut,
+        refreshUser: fetchMongoUser
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function FallbackAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
@@ -63,24 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchCurrentUser();
   }, []);
 
-  useEffect(() => {
-    const handleExpired = () => {
-      setUser(null);
-      localStorage.removeItem('achievedit_token');
-      setSessionExpiredNotice(true);
-    };
-    window.addEventListener('achievedit:session-expired', handleExpired);
-    return () => window.removeEventListener('achievedit:session-expired', handleExpired);
-  }, []);
-
   const signUp = async (data: SignUpData) => {
     try {
       const res = await api.post('/auth/register', data);
-      return {
-        error: null,
-        requireVerification: res.data.requireVerification,
-        email: res.data.email
-      };
+      return { error: null, requireVerification: res.data.requireVerification, email: res.data.email };
     } catch (err) {
       return { error: getErrorMessage(err, 'Signup failed. Please check your details.') };
     }
@@ -167,15 +319,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.post('/auth/logout');
     } catch {
-      // ignore network error on logout
+      // ignore
     } finally {
       localStorage.removeItem('achievedit_token');
       setUser(null);
     }
-  };
-
-  const refreshUser = async () => {
-    await fetchCurrentUser();
   };
 
   return (
@@ -194,7 +342,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         resetPassword,
         changePassword,
         signOut,
-        refreshUser
+        refreshUser: fetchCurrentUser
       }}
     >
       {children}
@@ -204,6 +352,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
   return ctx;
 }
