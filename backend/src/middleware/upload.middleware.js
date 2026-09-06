@@ -15,7 +15,7 @@ const upload = multer({
   fileFilter,
   // Kept modest deliberately — Cloudinary's free plan shares one credit pool
   // across storage and bandwidth, so smaller uploads stretch the free tier further.
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 });
 
 module.exports = upload;

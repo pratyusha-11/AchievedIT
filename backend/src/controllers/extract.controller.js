@@ -20,7 +20,11 @@ const extractCertificate = asyncHandler(async (req, res) => {
     const details = await extractCertificateDetails(image, mediaType);
     res.status(200).json(details);
   } catch (err) {
-    res.status(422).json({ message: 'Could not extract details from this image', details: err.message });
+    console.error('❌ AI Extraction failed:', err.message || err);
+    res.status(422).json({
+      message: err.message || 'Could not extract details from this image',
+      details: err.message
+    });
   }
 });
 

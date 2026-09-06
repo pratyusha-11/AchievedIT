@@ -17,7 +17,7 @@ Return ONLY a raw JSON object, no markdown fences, no preamble, matching exactly
 }
 Dates must be ISO format YYYY-MM-DD. If a field cannot be determined from the image, use null (or "other"/"offline"/"participant" for enum fields, or [] for tags). Never invent specific facts you cannot see.`;
 
-const MODEL = process.env.GROQ_MODEL || 'llama-3.2-11b-vision-preview';
+const MODEL = process.env.GROQ_MODEL || 'qwen/qwen3.6-27b';
 
 async function extractCertificateDetails(base64Image, mediaType = 'image/jpeg') {
   const cleanMediaType = mediaType.includes('png') ? 'image/png' : 'image/jpeg';

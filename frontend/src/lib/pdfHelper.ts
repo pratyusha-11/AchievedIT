@@ -51,13 +51,17 @@ export function getCertificatePreviewUrl(cert: {
  * and enables AI vision extraction on PDFs!
  */
 export async function renderPdfPageToDataUrl(file: File): Promise<string> {
-  try {
+  const timeoutPromise = new Promise<string>((_, reject) =>
+    setTimeout(() => reject(new Error('PDF preview generation timed out')), 3000)
+  );
+
+  const renderPromise = (async () => {
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
     const page = await pdf.getPage(1);
 
-    const viewport = page.getViewport({ scale: 1.5 });
+    const viewport = page.getViewport({ scale: 1.2 });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Failed to get 2D canvas context');
@@ -66,9 +70,8 @@ export async function renderPdfPageToDataUrl(file: File): Promise<string> {
     canvas.width = viewport.width;
 
     await page.render({ canvasContext: context, viewport }).promise;
-    return canvas.toDataURL('image/jpeg', 0.88);
-  } catch (err) {
-    console.warn('PDF.js client-side render notice:', err);
-    throw err;
-  }
+    return canvas.toDataURL('image/jpeg', 0.82);
+  })();
+
+  return Promise.race([renderPromise, timeoutPromise]);
 }

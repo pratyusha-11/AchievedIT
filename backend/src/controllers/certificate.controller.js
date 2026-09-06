@@ -49,7 +49,7 @@ const createCertificate = asyncHandler(async (req, res) => {
   }
 
   const fileKind = req.file.mimetype === 'application/pdf' ? 'pdf' : 'image';
-  const uploadResult = await uploadFile(req.file.buffer);
+  const uploadResult = await uploadFile(req.file.buffer, fileKind);
 
   const domainTags = req.body.domainTags
     ? Array.isArray(req.body.domainTags)
@@ -119,7 +119,7 @@ const updateCertificate = asyncHandler(async (req, res) => {
   if (req.file) {
     const oldPublicId = certificate.filePublicId;
     const fileKind = req.file.mimetype === 'application/pdf' ? 'pdf' : 'image';
-    const uploadResult = await uploadFile(req.file.buffer);
+    const uploadResult = await uploadFile(req.file.buffer, fileKind);
 
     certificate.fileUrl = uploadResult.secure_url;
     certificate.filePublicId = uploadResult.public_id;

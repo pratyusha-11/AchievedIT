@@ -7,11 +7,24 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-function uploadFile(buffer) {
+function uploadFile(buffer, fileKind = 'image') {
   return new Promise((resolve, reject) => {
+    const isPdf = fileKind === 'pdf';
+    const uploadOptions = {
+      folder: 'achievedit/certificates',
+      resource_type: isPdf ? 'auto' : 'image',
+      timeout: 60000
+    };
+
     const stream = cloudinary.uploader.upload_stream(
-      { folder: 'achievedit/certificates', resource_type: 'image' },
-      (error, result) => (error ? reject(error) : resolve(result))
+      uploadOptions,
+      (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          return reject(error);
+        }
+        resolve(result);
+      }
     );
     streamifier.createReadStream(buffer).pipe(stream);
   });
