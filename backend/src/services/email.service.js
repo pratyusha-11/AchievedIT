@@ -7,11 +7,17 @@ const emailPass = process.env.EMAIL_PASS;
 let smtpTransporter = null;
 if (emailUser && emailPass) {
   smtpTransporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
       user: emailUser,
-      pass: emailPass
-    }
+      pass: emailPass.replace(/\s+/g, '') // Strip spaces from Google App Password
+    },
+    family: 4, // CRITICAL: Render free tier does not route IPv6. Force IPv4 socket!
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 }
 
@@ -24,14 +30,42 @@ const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || (emailUser ? `AchievedIT <${
  */
 async function dispatchEmail({ to, subject, html }) {
   if (smtpTransporter) {
-    const info = await smtpTransporter.sendMail({
-      from: `AchievedIT <${emailUser}>`,
-      to,
-      subject,
-      html
-    });
-    console.log(`✅ Email delivered via Gmail SMTP to ${to} (ID: ${info.messageId})`);
-    return { success: true, id: info.messageId };
+    try {
+      const info = await smtpTransporter.sendMail({
+        from: `AchievedIT <${emailUser}>`,
+        to,
+        subject,
+        html
+      });
+      console.log(`✅ Email delivered via Gmail SMTP to ${to} (ID: ${info.messageId})`);
+      return { success: true, id: info.messageId };
+    } catch (smtpError) {
+      console.error('❌ Gmail SMTP delivery failed:', smtpError.message);
+
+      // Fallback: If Resend is configured, try delivering via Resend
+      if (resend) {
+        console.log('🔄 Attempting fallback delivery via Resend...');
+        try {
+          const resendResult = await resend.emails.send({
+            from: FROM_EMAIL,
+            to,
+            subject,
+            html
+          });
+          if (!resendResult.error) {
+            console.log(`✅ Fallback delivered via Resend to ${to} (ID: ${resendResult?.data?.id || 'ok'})`);
+            return { success: true, data: resendResult?.data };
+          }
+          console.error('Resend fallback also failed:', resendResult.error.message);
+        } catch (rErr) {
+          console.error('Resend fallback threw error:', rErr.message);
+        }
+      }
+
+      const err = new Error(`Email delivery failed: ${smtpError.message}`);
+      err.status = 400;
+      throw err;
+    }
   }
 
   if (resend) {
