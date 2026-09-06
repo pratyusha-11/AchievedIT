@@ -1,8 +1,60 @@
 const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
+
+const emailUser = process.env.EMAIL_USER;
+const emailPass = process.env.EMAIL_PASS;
+
+let smtpTransporter = null;
+if (emailUser && emailPass) {
+  smtpTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: emailUser,
+      pass: emailPass
+    }
+  });
+}
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'AchievedIT <onboarding@resend.dev>';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || (emailUser ? `AchievedIT <${emailUser}>` : 'AchievedIT <onboarding@resend.dev>');
+
+/**
+ * Send email helper supporting both Gmail SMTP (delivers to ANY address) and Resend
+ */
+async function dispatchEmail({ to, subject, html }) {
+  if (smtpTransporter) {
+    const info = await smtpTransporter.sendMail({
+      from: `AchievedIT <${emailUser}>`,
+      to,
+      subject,
+      html
+    });
+    console.log(`✅ Email delivered via Gmail SMTP to ${to} (ID: ${info.messageId})`);
+    return { success: true, id: info.messageId };
+  }
+
+  if (resend) {
+    const result = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject,
+      html
+    });
+
+    if (result && result.error) {
+      console.error('❌ Resend API returned error:', result.error);
+      const err = new Error(result.error.message || 'Email delivery failed');
+      err.status = 400;
+      throw err;
+    }
+
+    console.log(`✅ Email delivered via Resend to ${to} (ID: ${result?.data?.id || 'ok'})`);
+    return { success: true, data: result?.data };
+  }
+
+  return { success: true, mocked: true };
+}
 
 /**
  * Modern SaaS HTML email template wrapper
@@ -166,29 +218,10 @@ async function sendVerificationOtpEmail({ email, fullName, otp }) {
   console.log(`🔑 [VERIFICATION OTP FOR ${email}]: ${otp}`);
   console.log('='.repeat(60) + '\n');
 
-  if (!resend) {
-    return { success: true, mocked: true };
-  }
-
   try {
-    const result = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: email,
-      subject: subject,
-      html: html
-    });
-
-    if (result && result.error) {
-      console.error('❌ Resend API returned error:', result.error);
-      const err = new Error(result.error.message || 'Email delivery failed');
-      err.status = 400;
-      throw err;
-    }
-
-    console.log(`✅ Verification email sent to ${email} (ID: ${result?.data?.id || 'ok'})`);
-    return { success: true, data: result?.data };
+    return await dispatchEmail({ to: email, subject, html });
   } catch (error) {
-    console.error('Failed to send verification email via Resend:', error.message || error);
+    console.error('Failed to send verification email:', error.message || error);
     const err = new Error(`Email delivery failed: ${error.message || error}`);
     err.status = 400;
     throw err;
@@ -213,29 +246,10 @@ async function sendPasswordResetOtpEmail({ email, fullName, otp }) {
   console.log(`🔑 [PASSWORD RESET OTP FOR ${email}]: ${otp}`);
   console.log('='.repeat(60) + '\n');
 
-  if (!resend) {
-    return { success: true, mocked: true };
-  }
-
   try {
-    const result = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: email,
-      subject: subject,
-      html: html
-    });
-
-    if (result && result.error) {
-      console.error('❌ Resend API returned error:', result.error);
-      const err = new Error(result.error.message || 'Email delivery failed');
-      err.status = 400;
-      throw err;
-    }
-
-    console.log(`✅ Password reset email sent to ${email} (ID: ${result?.data?.id || 'ok'})`);
-    return { success: true, data: result?.data };
+    return await dispatchEmail({ to: email, subject, html });
   } catch (error) {
-    console.error('Failed to send password reset email via Resend:', error.message || error);
+    console.error('Failed to send password reset email:', error.message || error);
     const err = new Error(`Email delivery failed: ${error.message || error}`);
     err.status = 400;
     throw err;
