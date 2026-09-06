@@ -171,17 +171,22 @@ export default function ForgotPassword() {
       <div className="w-full max-w-md animate-fade-in">
         {/* Branding Header */}
         <div className="mb-8 text-center">
-          <Link to="/" className="inline-flex items-center justify-center gap-2.5 transition-transform hover:scale-105 mb-3 group">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center gap-2 mb-5 group transition-transform hover:scale-105"
+          >
             <img
               src={logo}
               alt="AchievedIT"
-              className="h-10 w-10 object-contain drop-shadow-sm"
+              className="h-8 w-8 object-contain drop-shadow-sm"
             />
-            <span className="font-display text-2xl font-bold tracking-tight text-ink-900 group-hover:text-brass transition-colors">
+            <span className="font-display text-lg font-bold tracking-tight text-ink-700 group-hover:text-brass transition-colors">
               AchievedIT
             </span>
           </Link>
-          <h1 className="font-display text-2xl font-bold text-ink-900">Reset Password</h1>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink-900">
+            Reset Password
+          </h1>
           <p className="mt-1 text-xs font-mono uppercase tracking-wider text-ink-500">
             Secure Account Recovery
           </p>
