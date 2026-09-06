@@ -17,23 +17,29 @@ Return ONLY a raw JSON object, no markdown fences, no preamble, matching exactly
 }
 Dates must be ISO format YYYY-MM-DD. If a field cannot be determined from the image, use null (or "other"/"offline"/"participant" for enum fields, or [] for tags). Never invent specific facts you cannot see.`;
 
-async function extractCertificateDetails(base64Image, mediaType) {
+const MODEL = process.env.GROQ_MODEL || 'llama-3.2-11b-vision-preview';
+
+async function extractCertificateDetails(base64Image, mediaType = 'image/jpeg') {
+  const cleanMediaType = mediaType.includes('png') ? 'image/png' : 'image/jpeg';
+  const apiKey = (process.env.GROQ_API_KEY || '').trim();
+
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${process.env.GROQ_API_KEY}`
+      authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: 'qwen/qwen3.6-27b',
+      model: MODEL,
       response_format: { type: 'json_object' },
+      temperature: 0.1,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'Extract the certificate details as the specified JSON object.' },
-            { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64Image}` } }
+            { type: 'text', text: 'Extract the certificate details from this image as the specified JSON object.' },
+            { type: 'image_url', image_url: { url: `data:${cleanMediaType};base64,${base64Image}` } }
           ]
         }
       ]
@@ -49,8 +55,10 @@ async function extractCertificateDetails(base64Image, mediaType) {
   const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('No response from extraction model');
 
-  const cleaned = content.replace(/```json|```/g, '').trim();
-  return JSON.parse(cleaned);
+  // Extract JSON object safely even if wrapped in markdown fences or commentary
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  const toParse = jsonMatch ? jsonMatch[0] : content.replace(/```json|```/g, '').trim();
+  return JSON.parse(toParse);
 }
 
 module.exports = { extractCertificateDetails };
