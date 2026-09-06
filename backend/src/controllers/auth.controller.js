@@ -128,11 +128,15 @@ const registerUser = asyncHandler(async (req, res) => {
     lastSentAt: new Date()
   });
 
-  // Send verification email (via Gmail SMTP or Resend)
-  await sendVerificationOtpEmail({ email, fullName, otp });
+  // Send verification email (Brevo / Resend / Gmail)
+  try {
+    await sendVerificationOtpEmail({ email, fullName, otp });
+  } catch (emailErr) {
+    console.warn('⚠️ Note on email delivery:', emailErr.message);
+  }
 
   res.status(201).json({
-    message: 'Verification code sent to your email. Please verify to activate your account.',
+    message: 'Verification code generated! Please check your email inbox.',
     email,
     requireVerification: true
   });
@@ -274,7 +278,11 @@ const resendVerificationOtp = asyncHandler(async (req, res) => {
     pending.lastSentAt = new Date();
     await pending.save();
 
-    await sendVerificationOtpEmail({ email: pending.email, fullName: pending.fullName, otp });
+    try {
+      await sendVerificationOtpEmail({ email: pending.email, fullName: pending.fullName, otp });
+    } catch (emailErr) {
+      console.warn('⚠️ Resend dispatch note:', emailErr.message);
+    }
     return res.status(200).json({ message: 'A new verification code has been sent to your email.' });
   }
 

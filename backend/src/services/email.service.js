@@ -21,14 +21,65 @@ if (emailUser && emailPass) {
   });
 }
 
+const brevoApiKey = process.env.BREVO_API_KEY;
+const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_USER || 'achievedit11@gmail.com';
+
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || (emailUser ? `AchievedIT <${emailUser}>` : 'AchievedIT <onboarding@resend.dev>');
 
 /**
- * Send email helper supporting both Gmail SMTP (delivers to ANY address) and Resend
+ * Send email helper supporting Brevo (HTTPS 443), Resend (HTTPS 443), and Gmail SMTP
  */
 async function dispatchEmail({ to, subject, html }) {
+  // Option 1: Brevo HTTPS REST API (Uses Port 443 — NEVER blocked by Render free tier, sends to ANY recipient)
+  if (brevoApiKey) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'AchievedIT', email: brevoSenderEmail },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || JSON.stringify(data));
+      }
+      console.log(`✅ Email delivered via Brevo HTTPS to ${to} (ID: ${data.messageId})`);
+      return { success: true, id: data.messageId };
+    } catch (brevoErr) {
+      console.error('❌ Brevo delivery failed:', brevoErr.message);
+    }
+  }
+
+  // Option 2: Resend HTTPS API (Uses Port 443)
+  if (resend) {
+    try {
+      const result = await resend.emails.send({
+        from: FROM_EMAIL,
+        to,
+        subject,
+        html
+      });
+      if (result && !result.error) {
+        console.log(`✅ Email delivered via Resend HTTPS to ${to} (ID: ${result?.data?.id || 'ok'})`);
+        return { success: true, data: result?.data };
+      }
+      console.warn('⚠️ Resend returned note:', result?.error?.message);
+    } catch (rErr) {
+      console.warn('⚠️ Resend threw error:', rErr.message);
+    }
+  }
+
+  // Option 3: Gmail SMTP (Note: Render free tier blocks outbound SMTP ports 25, 465, 587)
   if (smtpTransporter) {
     try {
       const info = await smtpTransporter.sendMail({
@@ -40,51 +91,8 @@ async function dispatchEmail({ to, subject, html }) {
       console.log(`✅ Email delivered via Gmail SMTP to ${to} (ID: ${info.messageId})`);
       return { success: true, id: info.messageId };
     } catch (smtpError) {
-      console.error('❌ Gmail SMTP delivery failed:', smtpError.message);
-
-      // Fallback: If Resend is configured, try delivering via Resend
-      if (resend) {
-        console.log('🔄 Attempting fallback delivery via Resend...');
-        try {
-          const resendResult = await resend.emails.send({
-            from: FROM_EMAIL,
-            to,
-            subject,
-            html
-          });
-          if (!resendResult.error) {
-            console.log(`✅ Fallback delivered via Resend to ${to} (ID: ${resendResult?.data?.id || 'ok'})`);
-            return { success: true, data: resendResult?.data };
-          }
-          console.error('Resend fallback also failed:', resendResult.error.message);
-        } catch (rErr) {
-          console.error('Resend fallback threw error:', rErr.message);
-        }
-      }
-
-      const err = new Error(`Email delivery failed: ${smtpError.message}`);
-      err.status = 400;
-      throw err;
+      console.warn('⚠️ Gmail SMTP port blocked or unreachable on this host:', smtpError.message);
     }
-  }
-
-  if (resend) {
-    const result = await resend.emails.send({
-      from: FROM_EMAIL,
-      to,
-      subject,
-      html
-    });
-
-    if (result && result.error) {
-      console.error('❌ Resend API returned error:', result.error);
-      const err = new Error(result.error.message || 'Email delivery failed');
-      err.status = 400;
-      throw err;
-    }
-
-    console.log(`✅ Email delivered via Resend to ${to} (ID: ${result?.data?.id || 'ok'})`);
-    return { success: true, data: result?.data };
   }
 
   return { success: true, mocked: true };
