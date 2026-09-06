@@ -46,6 +46,15 @@ app.use(
   })
 );
 
+// Friendly root endpoint so visiting the base Render URL directly in a browser doesn't 404
+app.get('/', (req, res) =>
+  res.status(200).json({
+    status: 'online',
+    message: 'AchievedIT API is running',
+    health: '/api/health'
+  })
+);
+
 // Render's health check hits this to know the service is alive.
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
