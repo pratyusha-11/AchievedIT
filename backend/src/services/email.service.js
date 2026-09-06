@@ -8,13 +8,13 @@ let smtpTransporter = null;
 if (emailUser && emailPass) {
   smtpTransporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    port: 587,
+    secure: false, // Standard STARTTLS port
     auth: {
       user: emailUser,
       pass: emailPass.replace(/\s+/g, '') // Strip spaces from Google App Password
     },
-    family: 4, // CRITICAL: Render free tier does not route IPv6. Force IPv4 socket!
+    family: 4, // Force IPv4 socket (bypasses Render IPv6 ENETUNREACH)
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000
