@@ -3,6 +3,7 @@ import { X, UploadCloud, Sparkles, PenLine, FileText, CheckCircle2, ArrowRight, 
 import { api } from '../lib/api';
 import { compressImageIfNeeded } from '../lib/compressImage';
 import { getErrorMessage } from '../lib/errorMessage';
+import { renderPdfPageToDataUrl } from '../lib/pdfHelper';
 import { EventType, Mode, Position, EVENT_TYPE_LABELS, POSITION_LABELS } from '../types';
 import Alert from './Alert';
 import Spinner from './Spinner';
@@ -66,16 +67,32 @@ export default function CertificateUploadModal({
 
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl);
+      }
     };
   }, [previewUrl]);
 
   const handleFile = async (raw: File) => {
     setCompressing(true);
-    const processed = await compressImageIfNeeded(raw).catch(() => raw);
+    let processed = raw;
+    let visualPreview = '';
+
+    if (raw.type === 'application/pdf') {
+      try {
+        visualPreview = await renderPdfPageToDataUrl(raw);
+      } catch (err) {
+        console.warn('Could not render PDF preview in browser:', err);
+        visualPreview = URL.createObjectURL(raw);
+      }
+    } else {
+      processed = await compressImageIfNeeded(raw).catch(() => raw);
+      visualPreview = URL.createObjectURL(processed);
+    }
+
     setCompressing(false);
     setFile(processed);
-    setPreviewUrl(URL.createObjectURL(processed));
+    setPreviewUrl(visualPreview);
     setStep('choose');
   };
 
@@ -103,10 +120,26 @@ export default function CertificateUploadModal({
     setExtracting(true);
     setExtractError(null);
     try {
-      const base64 = await fileToBase64(file);
+      let base64 = '';
+      let mediaType = file.type;
+
+      // If PDF, use rendered JPEG data URL from page 1 so Groq vision can process it!
+      if (file.type === 'application/pdf') {
+        if (previewUrl && previewUrl.startsWith('data:image/')) {
+          base64 = previewUrl.split(',')[1];
+          mediaType = 'image/jpeg';
+        } else {
+          const renderedDataUrl = await renderPdfPageToDataUrl(file);
+          base64 = renderedDataUrl.split(',')[1];
+          mediaType = 'image/jpeg';
+        }
+      } else {
+        base64 = await fileToBase64(file);
+      }
+
       const { data } = await api.post('/certificates/extract', {
         image: base64,
-        mediaType: file.type
+        mediaType: mediaType
       });
 
       setForm((prev) => ({
@@ -126,7 +159,7 @@ export default function CertificateUploadModal({
       setStep('review');
     } catch (err) {
       setExtractError(
-        getErrorMessage(err, 'AI extraction could not read this image. You can easily review & enter details manually.')
+        getErrorMessage(err, 'AI extraction could not read this certificate. You can easily review and enter details manually.')
       );
       setIsAiExtracted(false);
       setStep('review');
@@ -173,6 +206,8 @@ export default function CertificateUploadModal({
     }
   };
 
+  const isPdf = file?.type === 'application/pdf';
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 px-4 py-6 backdrop-blur-sm animate-fade-in"
@@ -214,8 +249,8 @@ export default function CertificateUploadModal({
               {compressing ? (
                 <>
                   <Spinner size={32} className="mb-3 text-brass" />
-                  <p className="font-display text-lg font-semibold text-ink-900">Optimizing certificate photo…</p>
-                  <p className="mt-1 text-xs text-ink-500">Compressing for lightning-fast delivery</p>
+                  <p className="font-display text-lg font-semibold text-ink-900">Preparing certificate document…</p>
+                  <p className="mt-1 text-xs text-ink-500">Generating preview and optimizing resolution</p>
                 </>
               ) : (
                 <>
@@ -226,7 +261,7 @@ export default function CertificateUploadModal({
                     Upload Certificate Image or PDF
                   </p>
                   <p className="mt-1 text-sm text-ink-500 max-w-sm">
-                    Drag and drop your file here, or click to browse. Supports JPG, PNG, and PDF files.
+                    Drag and drop your certificate here, or click to browse. Supports JPG, PNG, and PDF files.
                   </p>
                   <span className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2 text-xs font-semibold text-parchment-100 shadow">
                     Browse from computer
@@ -249,19 +284,29 @@ export default function CertificateUploadModal({
           {/* STEP 2: CHOOSE EXTRACTION METHOD */}
           {step === 'choose' && (
             <div className="animate-fade-in space-y-6">
+              {/* Visual Preview Box */}
               <div className="flex justify-center">
-                {previewUrl && file?.type.startsWith('image/') ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border shadow-md max-h-48">
-                    <img src={previewUrl} alt="preview" className="h-44 w-auto object-contain bg-ink-900/5" />
-                    <span className="absolute bottom-2 right-2 rounded-md bg-ink-900/80 px-2 py-0.5 text-[10px] font-mono text-white backdrop-blur">
-                      {(file.size / 1024).toFixed(0)} KB
+                {previewUrl ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-border shadow-lg max-h-52 bg-white flex items-center justify-center">
+                    <img
+                      src={previewUrl}
+                      alt="certificate preview"
+                      className="h-48 w-auto max-w-full object-contain"
+                    />
+                    {isPdf && (
+                      <span className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-lg border border-white/20 bg-black/80 px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-white shadow-lg backdrop-blur-md">
+                        <FileText size={11} className="text-rose-400 shrink-0" />
+                        <span>PDF (Page 1)</span>
+                      </span>
+                    )}
+                    <span className="absolute bottom-2.5 right-2.5 rounded-lg border border-white/10 bg-black/80 px-2 py-0.5 text-[10px] font-mono text-white backdrop-blur-md shadow">
+                      {file ? `${(file.size / 1024).toFixed(0)} KB` : ''}
                     </span>
                   </div>
                 ) : (
                   <div className="flex h-40 w-full max-w-md flex-col items-center justify-center gap-2 rounded-xl border border-border bg-parchment-200/50 p-4 font-mono text-xs text-ink-500">
                     <FileText size={32} className="text-rose-500" />
                     <span className="font-semibold text-ink-900 text-sm">{file?.name}</span>
-                    <span>PDF Document · Ready for upload</span>
                   </div>
                 )}
               </div>
@@ -271,7 +316,7 @@ export default function CertificateUploadModal({
                   How would you like to input the certificate details?
                 </h3>
                 <p className="text-xs text-ink-500 mt-1">
-                  You can always review and edit all fields before saving.
+                  You can review and edit all fields before saving.
                 </p>
               </div>
 
@@ -279,24 +324,22 @@ export default function CertificateUploadModal({
                 <button
                   type="button"
                   onClick={extractWithAI}
-                  disabled={extracting || file?.type === 'application/pdf'}
-                  className="focus-ring group rounded-2xl border-2 border-brass/40 bg-gradient-to-br from-brass/10 to-violet-500/5 p-5 text-left transition hover:border-brass hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={extracting}
+                  className="focus-ring group rounded-2xl border-2 border-brass/40 bg-gradient-to-br from-brass/10 to-violet-500/5 p-5 text-left transition hover:border-brass hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brass/20 text-brass">
                       {extracting ? <Spinner size={18} /> : <Sparkles size={18} />}
                     </div>
                     <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-brass-dark">
-                      Recommended
+                      Instant AI
                     </span>
                   </div>
                   <p className="font-display font-bold text-ink-900 group-hover:text-brass transition-colors">
                     {extracting ? 'Extracting with AI…' : 'Extract with AI'}
                   </p>
                   <p className="mt-1 text-xs text-ink-500 leading-relaxed">
-                    {file?.type === 'application/pdf'
-                      ? 'AI vision model works on photos (JPG/PNG). For PDFs, use manual entry.'
-                      : 'Multimodal AI reads the certificate, dates, organizer & pre-fills the review form.'}
+                    Multimodal AI analyzes the certificate image and pre-fills title, organizer, position, and dates for your review.
                   </p>
                 </button>
 
@@ -310,7 +353,7 @@ export default function CertificateUploadModal({
                   </div>
                   <p className="font-display font-bold text-ink-900">Fill in Manually</p>
                   <p className="mt-1 text-xs text-ink-500 leading-relaxed">
-                    Prefer entering details by hand? Start with a blank review form.
+                    Prefer entering details by hand? Jump straight to the manual form.
                   </p>
                 </button>
               </div>
@@ -331,16 +374,40 @@ export default function CertificateUploadModal({
           {/* STEP 3: REVIEW, EDIT & SAVE */}
           {step === 'review' && (
             <form onSubmit={handleSave} className="animate-fade-in space-y-5">
-              {/* AI Extraction Banner */}
+              {/* Document Preview Card in Review */}
+              {previewUrl && (
+                <div className="flex items-center gap-4 rounded-xl border border-border bg-parchment-200/50 p-3">
+                  <div className="h-16 w-24 shrink-0 rounded-lg overflow-hidden border border-border bg-white flex items-center justify-center shadow-sm">
+                    <img src={previewUrl} alt="review preview" className="h-full w-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-ink-900 truncate">
+                      {file?.name}
+                    </p>
+                    <p className="text-[11px] text-ink-500">
+                      {isPdf ? 'PDF Certificate · Visual preview rendered' : 'Image Certificate'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStep('choose')}
+                    className="text-xs font-semibold text-brass-dark hover:underline whitespace-nowrap"
+                  >
+                    Change Method
+                  </button>
+                </div>
+              )}
+
+              {/* AI Extraction Guidance Banner */}
               {isAiExtracted && (
                 <div className="flex items-start gap-3 rounded-xl border border-brass/30 bg-brass/10 p-3.5 text-xs text-ink-700">
                   <Sparkles size={18} className="text-brass shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold text-ink-900">
-                      AI Extracted Details — Please Review
+                      AI Extracted Details — Please Review & Edit
                     </p>
                     <p className="mt-0.5 text-ink-500">
-                      Our vision model analyzed your certificate. Verify or adjust the fields below before finalizing.
+                      Our vision model extracted the details below. You can correct or adjust any fields before saving.
                     </p>
                   </div>
                 </div>

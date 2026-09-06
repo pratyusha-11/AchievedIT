@@ -35,6 +35,7 @@ export interface Certificate {
   notes: string | null;
   fileUrl: string;
   rawFileUrl?: string;
+  pdfDownloadUrl?: string;
   fileKind?: 'image' | 'pdf';
   createdAt: string;
   updatedAt?: string;

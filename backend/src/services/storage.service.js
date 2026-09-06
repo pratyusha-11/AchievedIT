@@ -7,11 +7,6 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Cloudinary categorizes PDFs under its "image" resource type (not "raw") —
-// that's what gets them a correct file extension and Content-Type on delivery,
-// which is what makes a browser render a PDF inline instead of downloading it.
-// "raw" is for arbitrary binary Cloudinary can't otherwise identify — using it
-// for PDFs is exactly what causes the "downloads instead of opens" symptom.
 function uploadFile(buffer) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -26,14 +21,28 @@ function deleteFile(publicId) {
   return cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
 }
 
-// Inserts a bandwidth-saving delivery transformation. Real photos get
-// f_auto,q_auto (smallest acceptable format+quality per viewer). PDFs only get
-// q_auto — deliberately NOT f_auto, since forcing format negotiation on a PDF
-// can make Cloudinary serve a rasterized image of page 1 instead of the actual
-// PDF, which is the opposite of what "view certificate" should do.
+/**
+ * Transforms Cloudinary URL for optimized rendering.
+ * For PDFs: transforms to page 1 high-resolution JPEG (f_jpg,q_auto,pg_1)
+ * so it renders visually inside <img> tags, cards, and previews in all browsers
+ * without being blocked by Cloudinary's raw PDF delivery restrictions.
+ */
 function toOptimizedUrl(secureUrl, fileKind) {
-  const transformation = fileKind === 'pdf' ? 'q_auto' : 'f_auto,q_auto';
-  return secureUrl.replace('/upload/', `/upload/${transformation}/`);
+  if (!secureUrl) return '';
+  const isPdf = fileKind === 'pdf' || secureUrl.toLowerCase().includes('.pdf');
+  if (isPdf) {
+    let url = secureUrl.replace('/upload/', '/upload/f_jpg,q_auto,pg_1/');
+    return url.replace(/\.pdf(\?.*)?$/i, '.jpg$1');
+  }
+  return secureUrl.replace('/upload/', '/upload/f_auto,q_auto/');
 }
 
-module.exports = { uploadFile, deleteFile, toOptimizedUrl };
+function toPdfDownloadUrl(secureUrl) {
+  if (!secureUrl) return '';
+  if (secureUrl.toLowerCase().includes('.pdf')) {
+    return secureUrl.replace('/upload/', '/upload/fl_attachment/');
+  }
+  return secureUrl;
+}
+
+module.exports = { uploadFile, deleteFile, toOptimizedUrl, toPdfDownloadUrl };

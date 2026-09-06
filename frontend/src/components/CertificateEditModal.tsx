@@ -3,6 +3,7 @@ import { X, UploadCloud, RefreshCw, FileText, CheckCircle2 } from 'lucide-react'
 import { api } from '../lib/api';
 import { compressImageIfNeeded } from '../lib/compressImage';
 import { getErrorMessage } from '../lib/errorMessage';
+import { getCertificatePreviewUrl, renderPdfPageToDataUrl } from '../lib/pdfHelper';
 import { Certificate, EventType, Mode, Position, EVENT_TYPE_LABELS, POSITION_LABELS } from '../types';
 import Alert from './Alert';
 import Spinner from './Spinner';
@@ -75,12 +76,28 @@ export default function CertificateEditModal({
 
   if (!cert) return null;
 
+  const existingPreview = getCertificatePreviewUrl(cert);
+
   const handleFileSelect = async (file: File) => {
     setCompressing(true);
-    const processed = await compressImageIfNeeded(file).catch(() => file);
+    let processed = file;
+    let preview = '';
+
+    if (file.type === 'application/pdf') {
+      try {
+        preview = await renderPdfPageToDataUrl(file);
+      } catch (err) {
+        console.warn('PDF preview render notice:', err);
+        preview = URL.createObjectURL(file);
+      }
+    } else {
+      processed = await compressImageIfNeeded(file).catch(() => file);
+      preview = URL.createObjectURL(processed);
+    }
+
     setCompressing(false);
     setNewFile(processed);
-    setNewPreviewUrl(URL.createObjectURL(processed));
+    setNewPreviewUrl(preview);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -164,9 +181,9 @@ export default function CertificateEditModal({
                     alt="New file preview"
                     className="h-full w-full object-cover"
                   />
-                ) : cert.fileUrl ? (
+                ) : existingPreview ? (
                   <img
-                    src={cert.fileUrl}
+                    src={existingPreview}
                     alt={cert.title}
                     className="h-full w-full object-cover"
                   />

@@ -1,6 +1,21 @@
-import { useEffect } from 'react';
-import { X, ExternalLink, Download, Calendar, Tag, Trophy, Building2, Globe, FileText, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import {
+  X,
+  ExternalLink,
+  Download,
+  Calendar,
+  Tag,
+  Trophy,
+  Building2,
+  Globe,
+  FileText,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Image as ImageIcon
+} from 'lucide-react';
 import { Certificate, EVENT_TYPE_LABELS, POSITION_LABELS } from '../types';
+import { getCertificatePreviewUrl } from '../lib/pdfHelper';
 
 interface CertificateViewModalProps {
   cert: Certificate | null;
@@ -18,12 +33,17 @@ export default function CertificateViewModal({
   onClose,
   onEdit
 }: CertificateViewModalProps) {
+  const [zoom, setZoom] = useState(1);
+  const [viewMode, setViewMode] = useState<'image' | 'pdf'>('image');
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     if (cert) {
       window.addEventListener('keydown', handleKeyDown);
+      setZoom(1);
+      setViewMode('image');
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cert, onClose]);
@@ -33,70 +53,135 @@ export default function CertificateViewModal({
   const isPdf =
     cert.fileKind === 'pdf' ||
     cert.fileUrl.toLowerCase().endsWith('.pdf') ||
+    cert.fileUrl.includes('.pdf?') ||
     cert.fileUrl.includes('/pdf/') ||
-    cert.fileUrl.includes('.pdf?');
+    (cert.rawFileUrl && cert.rawFileUrl.toLowerCase().endsWith('.pdf'));
+
+  // Get reliable page 1 JPEG preview URL
+  const previewImageUrl = getCertificatePreviewUrl(cert);
+  const rawDocumentUrl = cert.rawFileUrl || cert.fileUrl;
+  const downloadUrl = cert.pdfDownloadUrl || rawDocumentUrl;
+
+  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 2.5));
+  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.6));
+  const handleResetZoom = () => setZoom(1);
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/60 p-4 sm:p-6 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/70 p-3 sm:p-6 backdrop-blur-md animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="flex flex-col lg:flex-row w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-2xl border border-border bg-parchment-100 shadow-2xl animate-scale-in">
+      <div className="flex flex-col lg:flex-row w-full max-w-5xl max-h-[94vh] overflow-hidden rounded-2xl border border-border bg-parchment-100 shadow-2xl animate-scale-in">
         {/* Certificate Display Area */}
-        <div className="relative flex-1 bg-ink-900/5 dark:bg-ink-900/40 flex flex-col items-center justify-center min-h-[320px] lg:min-h-[540px] p-4 overflow-hidden border-b lg:border-b-0 lg:border-r border-border">
-          {isPdf ? (
-            <div className="w-full h-full min-h-[380px] flex flex-col items-center justify-center p-6 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-500 mb-4">
-                <FileText size={36} />
-              </div>
-              <h4 className="font-display text-lg font-semibold text-ink-900 mb-1">
-                PDF Certificate
-              </h4>
-              <p className="text-sm text-ink-500 max-w-sm mb-6">
-                Click below to view the original PDF document in your browser reader.
-              </p>
-              <div className="flex items-center gap-3">
-                <a
-                  href={cert.fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-medium text-parchment-100 shadow hover:bg-ink-700 transition"
-                >
-                  <ExternalLink size={16} />
-                  <span>Open PDF in Full Screen</span>
-                </a>
-              </div>
-            </div>
-          ) : (
-            <div className="relative flex items-center justify-center w-full h-full max-h-[70vh]">
-              <img
-                src={cert.fileUrl}
-                alt={cert.title}
-                className="max-h-full max-w-full rounded-lg object-contain shadow-md"
-              />
-            </div>
-          )}
+        <div className="relative flex-1 bg-ink-900/10 dark:bg-ink-900/50 flex flex-col items-center justify-center min-h-[350px] lg:min-h-[560px] p-4 overflow-hidden border-b lg:border-b-0 lg:border-r border-border">
+          {/* Top Control Bar for View Area */}
+          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
+            {/* View Mode Toggle (for PDFs) */}
+            <div className="pointer-events-auto flex items-center gap-1.5 rounded-xl bg-parchment-100/90 p-1 shadow-md backdrop-blur border border-border">
+              {isPdf && (
+                <>
+                  <button
+                    onClick={() => setViewMode('image')}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      viewMode === 'image'
+                        ? 'bg-ink-900 text-parchment-100 shadow-sm'
+                        : 'text-ink-700 hover:bg-parchment-200'
+                    }`}
+                  >
+                    <ImageIcon size={13} />
+                    <span>Preview</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('pdf')}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      viewMode === 'pdf'
+                        ? 'bg-ink-900 text-parchment-100 shadow-sm'
+                        : 'text-ink-700 hover:bg-parchment-200'
+                    }`}
+                  >
+                    <FileText size={13} />
+                    <span>PDF Reader</span>
+                  </button>
+                </>
+              )}
 
-          {/* Quick open in new tab float */}
-          <div className="absolute top-3 left-3 flex items-center gap-2">
+              {!isPdf && (
+                <span className="flex items-center gap-1 px-2 py-0.5 font-mono text-xs font-semibold text-ink-700">
+                  <ImageIcon size={13} className="text-brass" />
+                  <span>Certificate Image</span>
+                </span>
+              )}
+            </div>
+
+            {/* Zoom Controls */}
+            {viewMode === 'image' && (
+              <div className="pointer-events-auto flex items-center gap-1 rounded-xl bg-parchment-100/90 p-1 shadow-md backdrop-blur border border-border">
+                <button
+                  onClick={handleZoomOut}
+                  className="rounded-lg p-1 text-ink-700 hover:bg-parchment-200 transition"
+                  title="Zoom Out"
+                >
+                  <ZoomOut size={15} />
+                </button>
+                <button
+                  onClick={handleResetZoom}
+                  className="rounded-lg px-1.5 py-0.5 font-mono text-xs text-ink-700 hover:bg-parchment-200 transition"
+                  title="Reset Zoom"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  onClick={handleZoomIn}
+                  className="rounded-lg p-1 text-ink-700 hover:bg-parchment-200 transition"
+                  title="Zoom In"
+                >
+                  <ZoomIn size={15} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Certificate Main Visual Area */}
+          <div className="w-full h-full flex items-center justify-center overflow-auto pt-10 pb-2">
+            {viewMode === 'pdf' && isPdf ? (
+              <div className="w-full h-full min-h-[420px] rounded-xl overflow-hidden shadow-md border border-border bg-white">
+                <iframe
+                  src={`${rawDocumentUrl}#toolbar=1&navpanes=0`}
+                  title={cert.title}
+                  className="w-full h-full min-h-[480px] border-0"
+                />
+              </div>
+            ) : (
+              <div className="relative flex items-center justify-center max-w-full max-h-[70vh] transition-transform duration-200" style={{ transform: `scale(${zoom})` }}>
+                <img
+                  src={previewImageUrl}
+                  alt={cert.title}
+                  className="max-h-[66vh] max-w-full rounded-xl object-contain shadow-xl border border-border/80 bg-white"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Open in new tab hint */}
+          <div className="absolute bottom-3 left-3 flex items-center gap-2">
             <a
-              href={cert.fileUrl}
+              href={rawDocumentUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg bg-parchment-100/90 px-3 py-1.5 text-xs font-medium text-ink-700 shadow-sm backdrop-blur hover:bg-parchment-100 transition"
+              className="flex items-center gap-1.5 rounded-xl bg-parchment-100/90 px-3 py-1.5 text-xs font-semibold text-ink-700 shadow-sm backdrop-blur border border-border hover:bg-parchment-100 transition"
             >
-              <ExternalLink size={14} />
-              <span>Full View</span>
+              <ExternalLink size={13} />
+              <span>Open File in Tab</span>
             </a>
           </div>
         </div>
 
         {/* Certificate Details Sidebar */}
-        <div className="w-full lg:w-96 flex flex-col justify-between overflow-y-auto p-6 max-h-[50vh] lg:max-h-[92vh]">
+        <div className="w-full lg:w-96 flex flex-col justify-between overflow-y-auto p-6 max-h-[50vh] lg:max-h-[94vh]">
           <div>
-            {/* Header */}
+            {/* Header with Type badge and close */}
             <div className="flex items-start justify-between gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-brass/15 px-3 py-1 font-mono text-xs font-semibold uppercase tracking-wider text-brass-dark">
+              <span className="inline-flex items-center gap-1 rounded-full bg-brass/15 px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-brass-dark">
                 {EVENT_TYPE_LABELS[cert.eventType]}
               </span>
               <button
@@ -112,15 +197,21 @@ export default function CertificateViewModal({
               {cert.title}
             </h2>
 
-            {/* Position Badge */}
-            <div className="mt-3 flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-parchment-200/50 px-3 py-1 text-xs font-semibold text-ink-700">
+            {/* Position Badge & Format */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-parchment-200/50 px-3 py-1 text-xs font-semibold text-ink-700">
                 <Trophy size={14} className="text-brass" />
                 {POSITION_LABELS[cert.position]}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-parchment-200/50 px-3 py-1 text-xs font-medium text-ink-500 uppercase">
+              <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-parchment-200/50 px-3 py-1 text-xs font-medium text-ink-500 uppercase">
                 {cert.mode}
               </span>
+              {isPdf && (
+                <span className="inline-flex items-center gap-1 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2.5 py-1 text-xs font-mono font-semibold">
+                  <FileText size={13} />
+                  <span>PDF Document</span>
+                </span>
+              )}
             </div>
 
             {/* Details List */}
@@ -128,7 +219,7 @@ export default function CertificateViewModal({
               <div className="flex items-start gap-3">
                 <Building2 size={16} className="text-ink-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs text-ink-500 uppercase font-mono">Organizer</p>
+                  <p className="text-[11px] text-ink-500 uppercase font-mono font-semibold">Organizer</p>
                   <p className="font-medium text-ink-900">{cert.organizer}</p>
                 </div>
               </div>
@@ -136,7 +227,7 @@ export default function CertificateViewModal({
               <div className="flex items-start gap-3">
                 <Calendar size={16} className="text-ink-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs text-ink-500 uppercase font-mono">Date</p>
+                  <p className="text-[11px] text-ink-500 uppercase font-mono font-semibold">Date</p>
                   <p className="font-medium text-ink-900">
                     {formatDate(cert.startDate)}
                     {cert.endDate && cert.endDate !== cert.startDate
@@ -150,7 +241,7 @@ export default function CertificateViewModal({
                 <div className="flex items-start gap-3">
                   <Globe size={16} className="text-ink-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-ink-500 uppercase font-mono">Credential Link</p>
+                    <p className="text-[11px] text-ink-500 uppercase font-mono font-semibold">Credential Link</p>
                     <a
                       href={cert.credentialUrl}
                       target="_blank"
@@ -167,12 +258,12 @@ export default function CertificateViewModal({
                 <div className="flex items-start gap-3">
                   <Tag size={16} className="text-ink-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-xs text-ink-500 uppercase font-mono mb-1.5">Domains</p>
+                    <p className="text-[11px] text-ink-500 uppercase font-mono font-semibold mb-1.5">Domains</p>
                     <div className="flex flex-wrap gap-1.5">
                       {cert.domainTags.map((tag) => (
                         <span
                           key={tag}
-                          className="rounded-md border border-border bg-parchment-200/70 px-2 py-0.5 text-xs text-ink-700"
+                          className="rounded-lg border border-border bg-parchment-200/70 px-2 py-0.5 text-xs text-ink-700 font-mono"
                         >
                           #{tag}
                         </span>
@@ -184,7 +275,7 @@ export default function CertificateViewModal({
 
               {cert.description && (
                 <div className="pt-2 border-t border-border/80">
-                  <p className="text-xs text-ink-500 uppercase font-mono mb-1">Description</p>
+                  <p className="text-[11px] text-ink-500 uppercase font-mono font-semibold mb-1">Description</p>
                   <p className="text-xs text-ink-700 leading-relaxed whitespace-pre-wrap">
                     {cert.description}
                   </p>
@@ -193,7 +284,7 @@ export default function CertificateViewModal({
 
               {cert.notes && (
                 <div className="pt-2 border-t border-border/80">
-                  <p className="text-xs text-ink-500 uppercase font-mono mb-1">Personal Notes</p>
+                  <p className="text-[11px] text-ink-500 uppercase font-mono font-semibold mb-1">Personal Notes</p>
                   <p className="text-xs text-ink-700 leading-relaxed italic whitespace-pre-wrap">
                     {cert.notes}
                   </p>
@@ -210,18 +301,19 @@ export default function CertificateViewModal({
                   onClose();
                   onEdit(cert);
                 }}
-                className="flex-1 rounded-xl border border-border bg-parchment-100 py-2 text-center text-sm font-medium text-ink-900 hover:bg-parchment-200 transition"
+                className="flex-1 rounded-xl border border-border bg-parchment-100 py-2.5 text-center text-xs font-semibold text-ink-900 hover:bg-parchment-200 transition"
               >
-                Edit Details
+                Edit Details & File
               </button>
             )}
             <a
-              href={cert.fileUrl}
+              href={downloadUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2 text-sm font-medium text-parchment-100 hover:bg-ink-700 transition"
+              download={cert.title}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-semibold text-parchment-100 hover:bg-ink-700 transition shadow-sm"
             >
-              <Download size={15} />
+              <Download size={14} />
               <span>Download</span>
             </a>
           </div>

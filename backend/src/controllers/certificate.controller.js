@@ -1,6 +1,6 @@
 const certificateModel = require('../models/certificate.model');
 const asyncHandler = require('../utils/asyncHandler');
-const { uploadFile, deleteFile, toOptimizedUrl } = require('../services/storage.service');
+const { uploadFile, deleteFile, toOptimizedUrl, toPdfDownloadUrl } = require('../services/storage.service');
 
 function toPublicCertificate(c) {
   return {
@@ -18,6 +18,7 @@ function toPublicCertificate(c) {
     notes: c.notes,
     fileUrl: toOptimizedUrl(c.fileUrl, c.fileKind),
     rawFileUrl: c.fileUrl,
+    pdfDownloadUrl: toPdfDownloadUrl(c.fileUrl),
     fileKind: c.fileKind,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt

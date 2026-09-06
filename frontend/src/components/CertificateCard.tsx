@@ -1,12 +1,33 @@
 import { Trash2, Edit3, Eye, ExternalLink, ImageOff, FileText, Calendar, Tag } from 'lucide-react';
 import { Certificate, EVENT_TYPE_LABELS, POSITION_LABELS } from '../types';
+import { getCertificatePreviewUrl } from '../lib/pdfHelper';
 
-const SEAL_COLOR: Record<string, string> = {
-  winner: 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40',
-  runner_up: 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40',
-  finalist: 'border-violet-500 text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40',
-  participant: 'border-slate-400 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40',
-  completion: 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40'
+const SEAL_CONFIG: Record<string, { badge: string; dot: string }> = {
+  winner: {
+    badge:
+      'border-amber-400/60 dark:border-amber-400/70 text-amber-700 dark:text-amber-200 bg-white/95 dark:bg-[#181524]/95 shadow-md',
+    dot: 'bg-amber-500'
+  },
+  runner_up: {
+    badge:
+      'border-indigo-400/60 dark:border-indigo-400/70 text-indigo-700 dark:text-indigo-200 bg-white/95 dark:bg-[#181524]/95 shadow-md',
+    dot: 'bg-indigo-500'
+  },
+  finalist: {
+    badge:
+      'border-purple-400/60 dark:border-purple-400/70 text-purple-700 dark:text-purple-200 bg-white/95 dark:bg-[#181524]/95 shadow-md',
+    dot: 'bg-purple-500'
+  },
+  participant: {
+    badge:
+      'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white/95 dark:bg-[#181524]/95 shadow-md',
+    dot: 'bg-slate-400'
+  },
+  completion: {
+    badge:
+      'border-emerald-400/60 dark:border-emerald-400/70 text-emerald-700 dark:text-emerald-200 bg-white/95 dark:bg-[#181524]/95 shadow-md',
+    dot: 'bg-emerald-500'
+  }
 };
 
 function formatDate(d: string | null) {
@@ -30,39 +51,34 @@ export default function CertificateCard({
   const isPdf =
     cert.fileKind === 'pdf' ||
     cert.fileUrl.toLowerCase().endsWith('.pdf') ||
-    cert.fileUrl.includes('/pdf/');
+    cert.fileUrl.includes('.pdf?') ||
+    cert.fileUrl.includes('/pdf/') ||
+    (cert.rawFileUrl && cert.rawFileUrl.toLowerCase().endsWith('.pdf'));
+
+  const previewImageUrl = getCertificatePreviewUrl(cert);
+  const seal = SEAL_CONFIG[cert.position] || SEAL_CONFIG.participant;
 
   return (
     <div className="card-hover group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border bg-parchment-100 shadow-sm transition-all duration-200 hover:shadow-xl hover:border-brass/40">
       {/* Top Banner / Stamp */}
       <div className="relative">
-        {/* Outcome Seal */}
+        {/* Outcome Seal: Always opaque with high contrast in both light & dark modes */}
         <div
-          className={`absolute right-3 top-3 z-10 flex h-10 px-2.5 items-center justify-center rounded-xl border font-mono text-[10px] font-bold uppercase tracking-wider shadow-sm backdrop-blur transition-transform duration-200 group-hover:scale-105 ${
-            SEAL_COLOR[cert.position] || SEAL_COLOR.participant
-          }`}
+          className={`absolute right-3 top-3 z-10 flex h-7 items-center gap-1.5 rounded-xl border px-2.5 font-mono text-[10px] font-bold uppercase tracking-wider backdrop-blur-md transition-transform duration-200 group-hover:scale-105 ${seal.badge}`}
           title={`Position: ${POSITION_LABELS[cert.position]}`}
         >
-          {POSITION_LABELS[cert.position]}
+          <span className={`h-1.5 w-1.5 rounded-full ${seal.dot} shrink-0`} />
+          <span>{POSITION_LABELS[cert.position]}</span>
         </div>
 
-        {/* Thumbnail or PDF placeholder */}
+        {/* Thumbnail Preview: Shows actual certificate image for both images and PDFs */}
         <div
           onClick={onOpen}
-          className="relative h-40 w-full cursor-pointer overflow-hidden bg-ink-900/5 dark:bg-ink-900/20"
+          className="relative h-44 w-full cursor-pointer overflow-hidden bg-ink-900/5 dark:bg-ink-900/20"
         >
-          {isPdf ? (
-            <div className="flex h-full flex-col items-center justify-center gap-1.5 p-4 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-500 shadow-sm">
-                <FileText size={26} />
-              </div>
-              <span className="font-mono text-[11px] font-semibold text-ink-500 uppercase tracking-wider">
-                PDF Document
-              </span>
-            </div>
-          ) : cert.fileUrl ? (
+          {previewImageUrl ? (
             <img
-              src={cert.fileUrl}
+              src={previewImageUrl}
               alt={cert.title}
               loading="lazy"
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
@@ -71,6 +87,14 @@ export default function CertificateCard({
             <div className="flex h-full flex-col items-center justify-center gap-1 font-mono text-xs text-ink-500">
               <ImageOff size={20} />
               <span>No preview</span>
+            </div>
+          )}
+
+          {/* PDF indicator pill: Solid dark glass with crisp white text in both light and dark mode */}
+          {isPdf && (
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-lg border border-white/20 bg-black/80 px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-white shadow-lg backdrop-blur-md">
+              <FileText size={11} className="text-rose-400 shrink-0" />
+              <span>PDF</span>
             </div>
           )}
 
