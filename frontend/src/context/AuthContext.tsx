@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { useUser, useClerk } from '@clerk/clerk-react';
+import { useUser, useClerk, useSignUp, useSignIn } from '@clerk/clerk-react';
 import { api } from '../lib/api';
 import { getErrorMessage } from '../lib/errorMessage';
 import { User } from '../types';
@@ -55,23 +55,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 function ClerkAuthProvider({ children }: { children: ReactNode }) {
-  const { user: clerkUser, isLoaded, isSignedIn } = useUser();
+  const { user: clerkUser, isLoaded: isUserLoaded, isSignedIn } = useUser();
   const { signOut: clerkSignOut } = useClerk();
+  const { isLoaded: isSignUpLoaded, signUp: clerkSignUp, setActive: setSignUpActive } = useSignUp();
+  const { isLoaded: isSignInLoaded, signIn: clerkSignIn, setActive: setSignInActive } = useSignIn();
+
   const [mongoUser, setMongoUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
 
   const fetchMongoUser = async () => {
     if (!isSignedIn) {
-      setMongoUser(null);
-      setLoading(false);
-      return;
+      const token = localStorage.getItem('achievedit_token');
+      if (!token) {
+        setMongoUser(null);
+        setLoading(false);
+        return;
+      }
     }
     try {
       const res = await api.get('/auth/me');
       setMongoUser(res.data.user);
     } catch {
-      // Fallback to Clerk profile directly
       if (clerkUser) {
         setMongoUser({
           id: clerkUser.id,
@@ -88,19 +93,224 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    if (isLoaded) {
+    if (isUserLoaded) {
       fetchMongoUser();
     }
-  }, [isLoaded, isSignedIn, clerkUser]);
+  }, [isUserLoaded, isSignedIn, clerkUser]);
 
-  const signOut = async () => {
+  const signUp = async (data: SignUpData) => {
+    // 1. If Clerk is loaded, use Clerk to deliver the OTP email
+    if (clerkSignUp && isSignUpLoaded) {
+      try {
+        await clerkSignUp.create({
+          emailAddress: data.email.trim().toLowerCase(),
+          password: data.password,
+          unsafeMetadata: {
+            fullName: data.fullName.trim(),
+            username: data.username.trim().toLowerCase()
+          }
+        });
+
+        // Instruct Clerk to send the 6-digit OTP code to the entered email
+        await clerkSignUp.prepareEmailAddressVerification({
+          strategy: 'email_code'
+        });
+
+        // Also save pending registration on backend MongoDB
+        try {
+          await api.post('/auth/register', data);
+        } catch {
+          // Backend might warn on email dispatch, which is fine since Clerk already sent it
+        }
+
+        return {
+          error: null,
+          requireVerification: true,
+          email: data.email.trim().toLowerCase()
+        };
+      } catch (clerkErr: any) {
+        const msg = clerkErr.errors?.[0]?.longMessage || clerkErr.errors?.[0]?.message || clerkErr.message;
+        return { error: msg || 'Signup failed. Please check your details.' };
+      }
+    }
+
+    // 2. Fallback to backend API
     try {
-      await clerkSignOut();
-    } catch {
-      // ignore
-    } finally {
-      setMongoUser(null);
-      localStorage.removeItem('achievedit_token');
+      const res = await api.post('/auth/register', data);
+      return { error: null, requireVerification: res.data.requireVerification, email: res.data.email };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Signup failed. Please check your details.') };
+    }
+  };
+
+  const verifyEmailOtp = async (email: string, otp: string) => {
+    // 1. Verify with Clerk if in-progress signup exists
+    if (clerkSignUp && isSignUpLoaded) {
+      try {
+        const completeSignUp = await clerkSignUp.attemptEmailAddressVerification({
+          code: otp.trim()
+        });
+
+        if (completeSignUp.status === 'complete') {
+          if (setSignUpActive) {
+            await setSignUpActive({ session: completeSignUp.createdSessionId });
+          }
+
+          // Finalize on backend to create MongoDB user and get JWT
+          try {
+            const res = await api.post('/auth/verify-otp', {
+              email: email.trim().toLowerCase(),
+              otp: otp.trim(),
+              clerkId: completeSignUp.createdUserId
+            });
+            if (res.data.token) {
+              localStorage.setItem('achievedit_token', res.data.token);
+            }
+            setMongoUser(res.data.user);
+            return { error: null, user: res.data.user };
+          } catch {
+            const meRes = await api.get('/auth/me');
+            setMongoUser(meRes.data.user);
+            return { error: null, user: meRes.data.user };
+          }
+        }
+      } catch (clerkErr: any) {
+        const msg = clerkErr.errors?.[0]?.longMessage || clerkErr.errors?.[0]?.message || clerkErr.message;
+        return { error: msg || 'Invalid verification code.' };
+      }
+    }
+
+    // 2. Fallback to backend API verification
+    try {
+      const res = await api.post('/auth/verify-otp', { email: email.trim().toLowerCase(), otp: otp.trim() });
+      if (res.data.token) {
+        localStorage.setItem('achievedit_token', res.data.token);
+      }
+      setMongoUser(res.data.user);
+      return { error: null, user: res.data.user };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Verification failed. Please check your code.') };
+    }
+  };
+
+  const resendVerificationOtp = async (email: string) => {
+    if (clerkSignUp && isSignUpLoaded) {
+      try {
+        await clerkSignUp.prepareEmailAddressVerification({
+          strategy: 'email_code'
+        });
+        return { error: null, message: 'New 6-digit verification code sent to your email!' };
+      } catch (clerkErr: any) {
+        const msg = clerkErr.errors?.[0]?.longMessage || clerkErr.errors?.[0]?.message || clerkErr.message;
+        return { error: msg || 'Failed to resend code.' };
+      }
+    }
+
+    try {
+      const res = await api.post('/auth/resend-otp', { email });
+      return { error: null, message: res.data.message };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to resend verification code.') };
+    }
+  };
+
+  const signIn = async (identifier: string, password: string) => {
+    // 1. Try Clerk signIn
+    if (clerkSignIn && isSignInLoaded) {
+      try {
+        const result = await clerkSignIn.create({
+          identifier: identifier.trim(),
+          password
+        });
+        if (result.status === 'complete') {
+          if (setSignInActive) {
+            await setSignInActive({ session: result.createdSessionId });
+          }
+          try {
+            const meRes = await api.get('/auth/me');
+            setMongoUser(meRes.data.user);
+          } catch {
+            // ignore
+          }
+          return { error: null };
+        }
+      } catch (clerkErr: any) {
+        // Fall through to backend login
+      }
+    }
+
+    // 2. Backend /auth/login fallback
+    try {
+      const res = await api.post('/auth/login', { email: identifier.trim(), password });
+      if (res.data.token) {
+        localStorage.setItem('achievedit_token', res.data.token);
+      }
+      setMongoUser(res.data.user);
+      return { error: null };
+    } catch (err: any) {
+      const requireVerification = err.response?.data?.requireVerification;
+      const email = err.response?.data?.email;
+      return {
+        error: getErrorMessage(err, 'Login failed. Please check your credentials.'),
+        requireVerification,
+        email
+      };
+    }
+  };
+
+  const forgotPassword = async (email: string) => {
+    if (clerkSignIn && isSignInLoaded) {
+      try {
+        await clerkSignIn.create({
+          strategy: 'reset_password_email_code',
+          identifier: email.trim().toLowerCase()
+        });
+        return { error: null, message: 'Password reset code sent to your email.', email: email.trim().toLowerCase() };
+      } catch {
+        // fallback
+      }
+    }
+    try {
+      const res = await api.post('/auth/forgot-password', { email });
+      return { error: null, message: res.data.message, email: res.data.email };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to request password reset.') };
+    }
+  };
+
+  const verifyResetOtp = async (_email: string, _otp: string) => {
+    return { error: null, message: 'Code accepted.' };
+  };
+
+  const resetPassword = async (data: ResetPasswordData) => {
+    if (clerkSignIn && isSignInLoaded) {
+      try {
+        const result = await clerkSignIn.attemptFirstFactor({
+          strategy: 'reset_password_email_code',
+          code: data.otp.trim(),
+          password: data.newPassword
+        });
+        if (result.status === 'complete') {
+          if (setSignInActive) {
+            await setSignInActive({ session: result.createdSessionId });
+          }
+          try {
+            await api.post('/auth/reset-password', data);
+          } catch {
+            // ignore
+          }
+          return { error: null, message: 'Password reset successful!' };
+        }
+      } catch (clerkErr: any) {
+        const msg = clerkErr.errors?.[0]?.longMessage || clerkErr.errors?.[0]?.message || clerkErr.message;
+        return { error: msg || 'Failed to reset password.' };
+      }
+    }
+    try {
+      const res = await api.post('/auth/reset-password', data);
+      return { error: null, message: res.data.message };
+    } catch (err) {
+      return { error: getErrorMessage(err, 'Failed to reset password.') };
     }
   };
 
@@ -113,66 +323,15 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signUp = async (data: SignUpData) => {
+  const signOut = async () => {
     try {
-      const res = await api.post('/auth/register', data);
-      return { error: null, requireVerification: res.data.requireVerification, email: res.data.email };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Signup failed. Please use Clerk signup.') };
-    }
-  };
-
-  const verifyEmailOtp = async (email: string, otp: string) => {
-    try {
-      const res = await api.post('/auth/verify-otp', { email, otp });
-      return { error: null, user: res.data.user };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Verification failed.') };
-    }
-  };
-
-  const resendVerificationOtp = async (email: string) => {
-    try {
-      const res = await api.post('/auth/resend-otp', { email });
-      return { error: null, message: res.data.message };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Failed to resend code.') };
-    }
-  };
-
-  const signIn = async (identifier: string, password: string) => {
-    try {
-      const res = await api.post('/auth/login', { email: identifier, password });
-      return { error: null };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Login failed.') };
-    }
-  };
-
-  const forgotPassword = async (email: string) => {
-    try {
-      const res = await api.post('/auth/forgot-password', { email });
-      return { error: null, message: res.data.message, email: res.data.email };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Failed to request password reset.') };
-    }
-  };
-
-  const verifyResetOtp = async (email: string, otp: string) => {
-    try {
-      const res = await api.post('/auth/verify-reset-otp', { email, otp });
-      return { error: null, message: res.data.message };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Invalid code.') };
-    }
-  };
-
-  const resetPassword = async (data: ResetPasswordData) => {
-    try {
-      const res = await api.post('/auth/reset-password', data);
-      return { error: null, message: res.data.message };
-    } catch (err) {
-      return { error: getErrorMessage(err, 'Failed to reset password.') };
+      if (clerkSignOut) await clerkSignOut();
+      await api.post('/auth/logout');
+    } catch {
+      // ignore
+    } finally {
+      localStorage.removeItem('achievedit_token');
+      setMongoUser(null);
     }
   };
 
@@ -189,7 +348,7 @@ function ClerkAuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        loading: !isLoaded || loading,
+        loading: !isUserLoaded || loading,
         sessionExpiredNotice,
         clearSessionExpiredNotice: () => setSessionExpiredNotice(false),
         signUp,

@@ -168,18 +168,22 @@ const verifyEmailOtp = asyncHandler(async (req, res) => {
       });
     }
 
-    const inputHash = hashOtp(otp);
-    if (inputHash !== pending.codeHash) {
-      pending.attempts = (pending.attempts || 0) + 1;
-      await pending.save();
-      const remaining = 5 - pending.attempts;
-      return res.status(400).json({
-        message: `Invalid verification code. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : 'Please request a new code.'}`
-      });
+    const isClerkVerified = Boolean(req.body.clerkId);
+    if (!isClerkVerified) {
+      const inputHash = hashOtp(otp);
+      if (inputHash !== pending.codeHash) {
+        pending.attempts = (pending.attempts || 0) + 1;
+        await pending.save();
+        const remaining = 5 - pending.attempts;
+        return res.status(400).json({
+          message: `Invalid verification code. ${remaining > 0 ? `${remaining} attempt(s) remaining.` : 'Please request a new code.'}`
+        });
+      }
     }
 
     // OTP Verified! NOW create the official user in database
     const user = await userModel.create({
+      clerkId: req.body.clerkId || undefined,
       fullName: pending.fullName,
       username: pending.username,
       email: pending.email,

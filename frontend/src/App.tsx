@@ -11,10 +11,10 @@ import ProtectedRoute from './components/ProtectedRoute';
 export default function App() {
   return (
     <Routes>
-      <Route path="/login/*" element={<Login />} />
-      <Route path="/signup/*" element={<Signup />} />
-      <Route path="/verify-email" element={<Navigate to="/signup" replace />} />
-      <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
 
       <Route
         path="/"
