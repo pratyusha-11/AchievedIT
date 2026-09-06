@@ -161,27 +161,37 @@ async function sendVerificationOtpEmail({ email, fullName, otp }) {
     subText: 'If you did not request this verification code, someone may have entered your email address by mistake. You can safely ignore this email.'
   });
 
+  // Always log OTP to server console for immediate fallback & debugging
+  console.log('\n' + '='.repeat(60));
+  console.log(`🔑 [VERIFICATION OTP FOR ${email}]: ${otp}`);
+  console.log('='.repeat(60) + '\n');
+
   if (!resend) {
-    console.log('\n' + '='.repeat(60));
-    console.log('✉️  [MOCK EMAIL GATEWAY - RESEND_API_KEY NOT SET]');
-    console.log(`To: ${email}`);
-    console.log(`Subject: ${subject}`);
-    console.log(`OTP Code: ${otp}`);
-    console.log('='.repeat(60) + '\n');
     return { success: true, mocked: true };
   }
 
   try {
-    const data = await resend.emails.send({
+    const result = await resend.emails.send({
       from: FROM_EMAIL,
       to: email,
       subject: subject,
       html: html
     });
-    return { success: true, data };
+
+    if (result && result.error) {
+      console.error('❌ Resend API returned error:', result.error);
+      const err = new Error(result.error.message || 'Email delivery failed');
+      err.status = 400;
+      throw err;
+    }
+
+    console.log(`✅ Verification email sent to ${email} (ID: ${result?.data?.id || 'ok'})`);
+    return { success: true, data: result?.data };
   } catch (error) {
-    console.error('Failed to send verification email via Resend:', error);
-    throw new Error(`Email delivery failed: ${error.message}`);
+    console.error('Failed to send verification email via Resend:', error.message || error);
+    const err = new Error(`Email delivery failed: ${error.message || error}`);
+    err.status = 400;
+    throw err;
   }
 }
 
@@ -198,27 +208,37 @@ async function sendPasswordResetOtpEmail({ email, fullName, otp }) {
     subText: 'SECURITY NOTICE: If you did not request a password reset, please ignore this email or contact support immediately. Never share this code with anyone.'
   });
 
+  // Always log OTP to server console for immediate fallback & debugging
+  console.log('\n' + '='.repeat(60));
+  console.log(`🔑 [PASSWORD RESET OTP FOR ${email}]: ${otp}`);
+  console.log('='.repeat(60) + '\n');
+
   if (!resend) {
-    console.log('\n' + '='.repeat(60));
-    console.log('🔐 [MOCK EMAIL GATEWAY - RESEND_API_KEY NOT SET]');
-    console.log(`To: ${email}`);
-    console.log(`Subject: ${subject}`);
-    console.log(`OTP Code: ${otp}`);
-    console.log('='.repeat(60) + '\n');
     return { success: true, mocked: true };
   }
 
   try {
-    const data = await resend.emails.send({
+    const result = await resend.emails.send({
       from: FROM_EMAIL,
       to: email,
       subject: subject,
       html: html
     });
-    return { success: true, data };
+
+    if (result && result.error) {
+      console.error('❌ Resend API returned error:', result.error);
+      const err = new Error(result.error.message || 'Email delivery failed');
+      err.status = 400;
+      throw err;
+    }
+
+    console.log(`✅ Password reset email sent to ${email} (ID: ${result?.data?.id || 'ok'})`);
+    return { success: true, data: result?.data };
   } catch (error) {
-    console.error('Failed to send password reset email via Resend:', error);
-    throw new Error(`Email delivery failed: ${error.message}`);
+    console.error('Failed to send password reset email via Resend:', error.message || error);
+    const err = new Error(`Email delivery failed: ${error.message || error}`);
+    err.status = 400;
+    throw err;
   }
 }
 
