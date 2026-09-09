@@ -5,13 +5,16 @@ const {
   deleteFile,
   toOptimizedUrl,
   toPdfViewUrl,
-  toPdfDownloadUrl
+  toPdfDownloadUrl,
+  toImageDownloadUrl
 } = require('../services/storage.service');
 
 function toPublicCertificate(c) {
   const isPdf = c.fileKind === 'pdf' || (c.fileUrl && c.fileUrl.toLowerCase().includes('.pdf'));
   const viewUrl = isPdf ? toPdfViewUrl(c.filePublicId, c.fileUrl) : (c.rawFileUrl || c.fileUrl);
-  const downloadUrl = isPdf ? toPdfDownloadUrl(c.filePublicId, c.fileUrl) : (c.rawFileUrl || c.fileUrl);
+  const downloadUrl = isPdf
+    ? toPdfDownloadUrl(c.filePublicId, c.fileUrl)
+    : toImageDownloadUrl(c.fileUrl, c.title);
 
   return {
     id: c._id,

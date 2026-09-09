@@ -35,6 +35,7 @@ export default function CertificateViewModal({
 }: CertificateViewModalProps) {
   const [zoom, setZoom] = useState(1);
   const [viewMode, setViewMode] = useState<'image' | 'pdf'>('image');
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -61,6 +62,33 @@ export default function CertificateViewModal({
   const previewImageUrl = getCertificatePreviewUrl(cert);
   const rawDocumentUrl = cert.rawFileUrl || cert.fileUrl;
   const downloadUrl = cert.pdfDownloadUrl || rawDocumentUrl;
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!downloadUrl) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(downloadUrl);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      const cleanTitle = (cert.title || 'certificate').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const ext = isPdf ? 'pdf' : (downloadUrl.split('.').pop()?.split(/[?#]/)[0] || 'jpg');
+      a.download = `${cleanTitle}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+        document.body.removeChild(a);
+      }, 100);
+    } catch {
+      window.open(downloadUrl, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 2.5));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.6));
@@ -306,16 +334,14 @@ export default function CertificateViewModal({
                 Edit Details & File
               </button>
             )}
-            <a
-              href={downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              download={cert.title}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-semibold text-parchment-100 hover:bg-ink-700 transition shadow-sm"
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-ink-900 px-4 py-2.5 text-xs font-semibold text-parchment-100 hover:bg-ink-700 transition shadow-sm disabled:opacity-75"
             >
               <Download size={14} />
-              <span>Download</span>
-            </a>
+              <span>{downloading ? 'Downloading…' : 'Download'}</span>
+            </button>
           </div>
         </div>
       </div>

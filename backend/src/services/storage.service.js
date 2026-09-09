@@ -88,10 +88,24 @@ function toPdfDownloadUrl(publicId, fallbackUrl) {
   return fallbackUrl || '';
 }
 
+/**
+ * Generates an image download URL with Content-Disposition: attachment
+ * so clicking 'Download' triggers the save/download file dialog instead of opening in a new tab.
+ */
+function toImageDownloadUrl(secureUrl, title = 'certificate') {
+  if (!secureUrl) return '';
+  const safeTitle = (title || 'certificate').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (secureUrl.includes('/upload/')) {
+    return secureUrl.replace('/upload/', `/upload/fl_attachment:${safeTitle}/`);
+  }
+  return secureUrl;
+}
+
 module.exports = {
   uploadFile,
   deleteFile,
   toOptimizedUrl,
   toPdfViewUrl,
-  toPdfDownloadUrl
+  toPdfDownloadUrl,
+  toImageDownloadUrl
 };
