@@ -1,8 +1,18 @@
 const certificateModel = require('../models/certificate.model');
 const asyncHandler = require('../utils/asyncHandler');
-const { uploadFile, deleteFile, toOptimizedUrl, toPdfDownloadUrl } = require('../services/storage.service');
+const {
+  uploadFile,
+  deleteFile,
+  toOptimizedUrl,
+  toPdfViewUrl,
+  toPdfDownloadUrl
+} = require('../services/storage.service');
 
 function toPublicCertificate(c) {
+  const isPdf = c.fileKind === 'pdf' || (c.fileUrl && c.fileUrl.toLowerCase().includes('.pdf'));
+  const viewUrl = isPdf ? toPdfViewUrl(c.filePublicId, c.fileUrl) : (c.rawFileUrl || c.fileUrl);
+  const downloadUrl = isPdf ? toPdfDownloadUrl(c.filePublicId, c.fileUrl) : (c.rawFileUrl || c.fileUrl);
+
   return {
     id: c._id,
     title: c.title,
@@ -17,8 +27,8 @@ function toPublicCertificate(c) {
     description: c.description,
     notes: c.notes,
     fileUrl: toOptimizedUrl(c.fileUrl, c.fileKind),
-    rawFileUrl: c.fileUrl,
-    pdfDownloadUrl: toPdfDownloadUrl(c.fileUrl),
+    rawFileUrl: isPdf ? viewUrl : (c.rawFileUrl || c.fileUrl),
+    pdfDownloadUrl: downloadUrl,
     fileKind: c.fileKind,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt
@@ -57,6 +67,12 @@ const createCertificate = asyncHandler(async (req, res) => {
       : req.body.domainTags.split(',').map((t) => t.trim()).filter(Boolean)
     : [];
 
+  // For PDFs, store the optimized page-1 JPEG URL so that MongoDB Compass can open and view it neatly,
+  // while keeping rawFileUrl for original document tracking.
+  const storedFileUrl = fileKind === 'pdf'
+    ? toOptimizedUrl(uploadResult.secure_url, 'pdf')
+    : uploadResult.secure_url;
+
   const certificate = await certificateModel.create({
     user: req.userId,
     title: title.trim(),
@@ -70,7 +86,8 @@ const createCertificate = asyncHandler(async (req, res) => {
     credentialUrl: req.body.credentialUrl || null,
     description: req.body.description || null,
     notes: req.body.notes || null,
-    fileUrl: uploadResult.secure_url,
+    fileUrl: storedFileUrl,
+    rawFileUrl: uploadResult.secure_url,
     filePublicId: uploadResult.public_id,
     fileKind: fileKind
   });
@@ -121,7 +138,12 @@ const updateCertificate = asyncHandler(async (req, res) => {
     const fileKind = req.file.mimetype === 'application/pdf' ? 'pdf' : 'image';
     const uploadResult = await uploadFile(req.file.buffer, fileKind);
 
-    certificate.fileUrl = uploadResult.secure_url;
+    const storedFileUrl = fileKind === 'pdf'
+      ? toOptimizedUrl(uploadResult.secure_url, 'pdf')
+      : uploadResult.secure_url;
+
+    certificate.fileUrl = storedFileUrl;
+    certificate.rawFileUrl = uploadResult.secure_url;
     certificate.filePublicId = uploadResult.public_id;
     certificate.fileKind = fileKind;
 

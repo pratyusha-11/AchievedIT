@@ -23,6 +23,7 @@ const certificateSchema = new mongoose.Schema(
     description: { type: String, default: null },
     notes: { type: String, default: null },
     fileUrl: { type: String, required: true },
+    rawFileUrl: { type: String, default: null },
     filePublicId: { type: String, required: true },
     // Cloudinary treats both photos and PDFs as its "image" asset type, so this
     // just tracks which kind of file it actually is for our own delivery-URL logic.

@@ -9,10 +9,11 @@ cloudinary.config({
 
 function uploadFile(buffer, fileKind = 'image') {
   return new Promise((resolve, reject) => {
-    const isPdf = fileKind === 'pdf';
+    // Cloudinary categorizes both images and PDFs under 'image' resource type.
+    // This allows PDF page rasterization and authenticated PDF delivery.
     const uploadOptions = {
       folder: 'achievedit/certificates',
-      resource_type: isPdf ? 'auto' : 'image',
+      resource_type: 'image',
       timeout: 60000
     };
 
@@ -50,12 +51,47 @@ function toOptimizedUrl(secureUrl, fileKind) {
   return secureUrl.replace('/upload/', '/upload/f_auto,q_auto/');
 }
 
-function toPdfDownloadUrl(secureUrl) {
-  if (!secureUrl) return '';
-  if (secureUrl.toLowerCase().includes('.pdf')) {
-    return secureUrl.replace('/upload/', '/upload/fl_attachment/');
+/**
+ * Generates an authenticated URL for inline PDF viewing (e.g. PDF reader iframe or new tab).
+ * Bypasses Cloudinary's default raw delivery ACL restrictions so users never see a 401 error.
+ */
+function toPdfViewUrl(publicId, fallbackUrl) {
+  if (publicId) {
+    try {
+      return cloudinary.utils.private_download_url(publicId, 'pdf', {
+        resource_type: 'image',
+        type: 'upload'
+      });
+    } catch (err) {
+      console.warn('Failed to generate private view URL for PDF:', err.message);
+    }
   }
-  return secureUrl;
+  return fallbackUrl || '';
 }
 
-module.exports = { uploadFile, deleteFile, toOptimizedUrl, toPdfDownloadUrl };
+/**
+ * Generates an authenticated download URL with Content-Disposition: attachment
+ * so clicking 'Download' immediately downloads the original PDF file cleanly.
+ */
+function toPdfDownloadUrl(publicId, fallbackUrl) {
+  if (publicId) {
+    try {
+      return cloudinary.utils.private_download_url(publicId, 'pdf', {
+        resource_type: 'image',
+        type: 'upload',
+        attachment: true
+      });
+    } catch (err) {
+      console.warn('Failed to generate private download URL for PDF:', err.message);
+    }
+  }
+  return fallbackUrl || '';
+}
+
+module.exports = {
+  uploadFile,
+  deleteFile,
+  toOptimizedUrl,
+  toPdfViewUrl,
+  toPdfDownloadUrl
+};
